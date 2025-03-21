@@ -33,6 +33,13 @@ class Game {
         this.handModel = null;
         this.handAnimationTime = 0;
         this.isHandAnimating = false;
+        this.isGameOver = false;
+        this.cinematicCamera = null;
+        this.isCinematicView = false;
+        this.cinematicStartTime = 0;
+        this.cinematicDuration = 3000; // 3 seconds
+        this.lastTaggedPlayer = null;
+        this.lastTaggerPlayer = null;
         this.init();
     }
 
@@ -95,19 +102,19 @@ class Game {
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
         document.addEventListener('keyup', (e) => this.handleKeyUp(e));
 
-        // Handle Tab key for scoreboard
+        // Handle Tab key for leaderboard
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Tab') {
                 e.preventDefault();
-                document.getElementById('scoreboard').style.display = 'block';
-                this.updateScoreboard();
+                document.getElementById('leaderboard').style.display = 'block';
+                this.updateLeaderboard();
             }
         });
 
         document.addEventListener('keyup', (e) => {
             if (e.key === 'Tab') {
                 e.preventDefault();
-                document.getElementById('scoreboard').style.display = 'none';
+                document.getElementById('leaderboard').style.display = 'none';
             }
         });
 
@@ -294,7 +301,12 @@ class Game {
                 this.playerData.isTagger = true;
                 this.playerData.color = '#FF0000';
                 this.updateGameStatus();
-                this.updateHandColor(); // Update hand color when tagged
+                this.updateHandColor();
+            }
+            
+            // Show cinematic view for last tag
+            if (data.isLastTag) {
+                this.showCinematicView(data.tagger, data.tagged);
             }
         });
 
@@ -303,6 +315,17 @@ class Game {
             const gameResult = document.getElementById('game-result');
             const mvpName = document.getElementById('mvp-name');
             const mvpScore = document.getElementById('mvp-score');
+
+            // Disable movement
+            this.movement = {
+                forward: false,
+                backward: false,
+                left: false,
+                right: false,
+                jumping: false
+            };
+            this.sprintActive = false;
+            this.isGameOver = true;
 
             // Show game over modal
             gameOverModal.style.display = 'block';
@@ -322,9 +345,11 @@ class Game {
                 `Distance: ${data.mvp.score}` :
                 `Tags: ${data.mvp.score}`;
 
-            // Hide modal after 5 seconds
+            // Hide modal and reset game after 5 seconds
             setTimeout(() => {
                 gameOverModal.style.display = 'none';
+                this.isGameOver = false;
+                this.respawnPlayer();
             }, 5000);
         });
 
@@ -746,23 +771,43 @@ class Game {
         }
     }
 
-    updateScoreboard() {
-        const tbody = document.getElementById('scoreboard-body');
+    updateLeaderboard() {
+        const tbody = document.getElementById('leaderboard-body');
         tbody.innerHTML = '';
 
-        Object.values(this.players).forEach((player, index) => {
-            const playerData = Object.values(this.socket.gameState.players).find(p => p.id === Array.from(this.players.keys())[index]);
-            if (playerData) {
-                const row = document.createElement('tr');
-                row.className = playerData.isTagger ? 'tagger-row' : 'runner-row';
-                row.innerHTML = `
-                    <td>${playerData.username}</td>
-                    <td>${playerData.isTagger ? 'Tagger' : 'Runner'}</td>
-                    <td>${playerData.score}</td>
-                    <td>${Math.floor(playerData.distanceRun)}</td>
-                `;
-                tbody.appendChild(row);
+        // Get all players and sort them
+        const players = Object.values(this.socket.gameState.players)
+            .sort((a, b) => {
+                // Sort taggers by score (tags)
+                if (a.isTagger && b.isTagger) {
+                    return b.score - a.score;
+                }
+                // Sort runners by distance
+                if (!a.isTagger && !b.isTagger) {
+                    return b.distanceRun - a.distanceRun;
+                }
+                // Taggers come first
+                return a.isTagger ? -1 : 1;
+            });
+
+        players.forEach((playerData, index) => {
+            const row = document.createElement('tr');
+            row.className = playerData.isTagger ? 'tagger-row' : 'runner-row';
+            
+            // Highlight the local player's row
+            if (playerData.id === this.playerData.id) {
+                row.style.fontWeight = 'bold';
+                row.style.textShadow = '0 0 5px currentColor';
             }
+
+            row.innerHTML = `
+                <td class="rank-column">${index + 1}</td>
+                <td>${playerData.username}${playerData.id === this.playerData.id ? ' (You)' : ''}</td>
+                <td>${playerData.isTagger ? 'Tagger' : 'Runner'}</td>
+                <td>${playerData.isTagger ? playerData.score + ' tags' : '-'}</td>
+                <td>${Math.floor(playerData.distanceRun)} m</td>
+            `;
+            tbody.appendChild(row);
         });
     }
 
@@ -855,29 +900,97 @@ class Game {
         }
     }
 
+    showCinematicView(tagger, tagged) {
+        this.isCinematicView = true;
+        this.cinematicStartTime = Date.now();
+        this.lastTaggedPlayer = tagged;
+        this.lastTaggerPlayer = tagger;
+
+        // Create cinematic camera
+        this.cinematicCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        
+        // Add black bars
+        const blackBars = document.createElement('div');
+        blackBars.id = 'cinematic-bars';
+        blackBars.innerHTML = `
+            <div class="black-bar top"></div>
+            <div class="player-info">
+                <span class="tagger-name">${tagger.username}</span>
+                <span class="tagged-name">tagged</span>
+                <span class="victim-name">${tagged.username}</span>
+            </div>
+            <div class="black-bar bottom"></div>
+        `;
+        document.body.appendChild(blackBars);
+
+        // Position cinematic camera
+        const taggerPos = new THREE.Vector3(tagger.position.x, tagger.position.y + this.eyeHeight, tagger.position.z);
+        const taggedPos = new THREE.Vector3(tagged.position.x, tagged.position.y + this.eyeHeight, tagged.position.z);
+        
+        // Position camera behind tagger, looking at tagged player
+        const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
+        const cameraPos = new THREE.Vector3().copy(taggerPos).sub(direction.multiplyScalar(5));
+        cameraPos.y += 2; // Slightly above for dramatic angle
+        
+        this.cinematicCamera.position.copy(cameraPos);
+        this.cinematicCamera.lookAt(taggedPos);
+    }
+
+    updateCinematicView() {
+        if (!this.isCinematicView) return;
+
+        const elapsed = Date.now() - this.cinematicStartTime;
+        const progress = Math.min(elapsed / this.cinematicDuration, 1);
+
+        if (progress >= 1) {
+            // End cinematic view
+            this.isCinematicView = false;
+            const bars = document.getElementById('cinematic-bars');
+            if (bars) bars.remove();
+            return;
+        }
+
+        // Slow motion effect - update positions more slowly
+        const taggerPos = new THREE.Vector3(
+            this.lastTaggerPlayer.position.x,
+            this.lastTaggerPlayer.position.y + this.eyeHeight,
+            this.lastTaggerPlayer.position.z
+        );
+        const taggedPos = new THREE.Vector3(
+            this.lastTaggedPlayer.position.x,
+            this.lastTaggedPlayer.position.y + this.eyeHeight,
+            this.lastTaggedPlayer.position.z
+        );
+
+        // Smoothly move camera
+        const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
+        const cameraPos = new THREE.Vector3().copy(taggerPos).sub(direction.multiplyScalar(5));
+        cameraPos.y += 2 + Math.sin(progress * Math.PI) * 0.5; // Add slight vertical movement
+
+        this.cinematicCamera.position.copy(cameraPos);
+        this.cinematicCamera.lookAt(taggedPos);
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        // Update hand animation
-        this.updateHandAnimation();
-
-        // Animate clouds
-        this.clouds.forEach(cloud => {
-            cloud.mesh.position.x += cloud.speed;
-            
-            // Wrap clouds around the map
-            if (cloud.mesh.position.x > 100) {
-                cloud.mesh.position.x = -100;
-            }
-        });
-
-        // Update camera position every frame to ensure smooth camera movement
-        this.updateCameraPosition();
-        
-        // Update player position based on movement state
-        this.updatePlayerPosition();
-
-        this.renderer.render(this.scene, this.camera);
+        // Update cinematic view if active
+        if (this.isCinematicView) {
+            this.updateCinematicView();
+            this.renderer.render(this.scene, this.cinematicCamera);
+        } else {
+            // Normal game rendering
+            this.updateHandAnimation();
+            this.clouds.forEach(cloud => {
+                cloud.mesh.position.x += cloud.speed;
+                if (cloud.mesh.position.x > 100) {
+                    cloud.mesh.position.x = -100;
+                }
+            });
+            this.updateCameraPosition();
+            this.updatePlayerPosition();
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 
     getRandomSpawnPoint() {
@@ -908,13 +1021,35 @@ class Game {
         this.playerData.isShielded = true;
         this.shieldActive = true;
         
+        // Reset player state
+        this.movement = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            jumping: false
+        };
+        this.sprintActive = false;
+        this.sprintCooldown = 0;
+        this.verticalVelocity = 0;
+        
         // Reset shield timer
+        const shieldStatus = document.getElementById('game-status');
+        shieldStatus.textContent = 'Shield Active (3s)';
+        shieldStatus.classList.add('shield-active');
+        
         setTimeout(() => {
             this.shieldActive = false;
             this.playerData.isShielded = false;
             this.socket.emit('shield-expired', this.playerData.id);
             this.updateGameStatus();
+            shieldStatus.classList.remove('shield-active');
         }, 3000);
+
+        // Update sprint status
+        const sprintStatus = document.getElementById('sprint-status');
+        sprintStatus.textContent = 'Sprint Ready';
+        sprintStatus.className = 'hud sprint-ready';
 
         // Update position
         this.socket.emit('move', this.playerData);
