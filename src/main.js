@@ -405,47 +405,69 @@ class Game {
         body.position.y = 0.75;
         player.add(body);
 
-        // Head
+        // Head (as a group to rotate independently)
+        const headGroup = new THREE.Group();
         const headGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
         const headMaterial = new THREE.MeshStandardMaterial({ color: color });
         const head = new THREE.Mesh(headGeometry, headMaterial);
-        head.position.y = 1.75;
-        player.add(head);
+        headGroup.add(head);
 
-        // Arms
-        const armGeometry = new THREE.BoxGeometry(0.25, 0.75, 0.25);
-        const leftArm = new THREE.Mesh(armGeometry, bodyMaterial);
-        leftArm.position.set(-0.625, 1, 0);
-        player.add(leftArm);
-
-        const rightArm = new THREE.Mesh(armGeometry, bodyMaterial);
-        rightArm.position.set(0.625, 1, 0);
-        player.add(rightArm);
-
-        // Legs
-        const legGeometry = new THREE.BoxGeometry(0.25, 0.75, 0.25);
-        const leftLeg = new THREE.Mesh(legGeometry, bodyMaterial);
-        leftLeg.position.set(-0.25, 0.375, 0);
-        player.add(leftLeg);
-
-        const rightLeg = new THREE.Mesh(legGeometry, bodyMaterial);
-        rightLeg.position.set(0.25, 0.375, 0);
-        player.add(rightLeg);
-
-        // Face
-        const faceGroup = new THREE.Group();
-        
-        // Eyes
+        // Eyes (added to head group)
         const eyeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
         const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
         
         const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        leftEye.position.set(-0.15, 1.8, 0.3);
-        player.add(leftEye);
+        leftEye.position.set(-0.15, 0, 0.3);
+        headGroup.add(leftEye);
         
         const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        rightEye.position.set(0.15, 1.8, 0.3);
-        player.add(rightEye);
+        rightEye.position.set(0.15, 0, 0.3);
+        headGroup.add(rightEye);
+
+        headGroup.position.y = 1.75;
+        player.add(headGroup);
+
+        // Arms (as groups for animation)
+        const armGeometry = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+        
+        const leftArmGroup = new THREE.Group();
+        const leftArm = new THREE.Mesh(armGeometry, bodyMaterial);
+        leftArm.position.y = -0.375; // Center the rotation point
+        leftArmGroup.add(leftArm);
+        leftArmGroup.position.set(-0.625, 1.375, 0);
+        player.add(leftArmGroup);
+
+        const rightArmGroup = new THREE.Group();
+        const rightArm = new THREE.Mesh(armGeometry, bodyMaterial);
+        rightArm.position.y = -0.375; // Center the rotation point
+        rightArmGroup.add(rightArm);
+        rightArmGroup.position.set(0.625, 1.375, 0);
+        player.add(rightArmGroup);
+
+        // Legs (as groups for animation)
+        const legGeometry = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+        
+        const leftLegGroup = new THREE.Group();
+        const leftLeg = new THREE.Mesh(legGeometry, bodyMaterial);
+        leftLeg.position.y = -0.375; // Center the rotation point
+        leftLegGroup.add(leftLeg);
+        leftLegGroup.position.set(-0.25, 0.75, 0);
+        player.add(leftLegGroup);
+
+        const rightLegGroup = new THREE.Group();
+        const rightLeg = new THREE.Mesh(legGeometry, bodyMaterial);
+        rightLeg.position.y = -0.375; // Center the rotation point
+        rightLegGroup.add(rightLeg);
+        rightLegGroup.position.set(0.25, 0.75, 0);
+        player.add(rightLegGroup);
+
+        // Store references for animation
+        player.headGroup = headGroup;
+        player.leftArmGroup = leftArmGroup;
+        player.rightArmGroup = rightArmGroup;
+        player.leftLegGroup = leftLegGroup;
+        player.rightLegGroup = rightLegGroup;
+        player.animationTime = 0;
 
         return player;
     }
@@ -475,17 +497,59 @@ class Game {
     updatePlayer(playerData) {
         const player = this.players.get(playerData.id);
         if (player) {
+            // Update position
             player.position.set(
                 playerData.position.x,
                 playerData.position.y,
                 playerData.position.z
             );
             
+            // Update head rotation for all players
+            if (playerData.id === this.playerData.id) {
+                // For local player, use camera rotation
+                player.headGroup.rotation.y = this.cameraRotation;
+                player.rotation.y = this.cameraRotation;
+            } else {
+                // For other players, calculate rotation based on movement
+                if (player.lastPosition) {
+                    const dx = playerData.position.x - player.lastPosition.x;
+                    const dz = playerData.position.z - player.lastPosition.z;
+                    if (dx !== 0 || dz !== 0) {
+                        player.rotation.y = Math.atan2(dx, dz);
+                        player.headGroup.rotation.y = Math.atan2(dx, dz);
+                    }
+                }
+            }
+            player.lastPosition = { ...playerData.position };
+
+            // Update running animation
+            const isMoving = 
+                (playerData.position.x !== player.lastPosition.x) ||
+                (playerData.position.z !== player.lastPosition.z);
+
+            if (isMoving) {
+                player.animationTime += 0.15;
+                const swingAngle = Math.PI/4;
+                
+                // Animate arms and legs in opposite phases
+                player.leftArmGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+                player.rightArmGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
+                player.leftLegGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
+                player.rightLegGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+            } else {
+                // Reset animation when not moving
+                player.leftArmGroup.rotation.x = 0;
+                player.rightArmGroup.rotation.x = 0;
+                player.leftLegGroup.rotation.x = 0;
+                player.rightLegGroup.rotation.x = 0;
+                player.animationTime = 0;
+            }
+            
             // Update player appearance
             player.traverse((child) => {
                 if (child.isMesh && child.material.color) {
                     // Don't change color of eyes
-                    if (child.position.y !== 1.8) {
+                    if (child.parent !== player.headGroup || child === player.headGroup.children[0]) {
                         child.material.color.setStyle(playerData.isTagger ? '#FF0000' : '#00FFFF');
                     }
                     child.material.transparent = playerData.isShielded;
