@@ -306,6 +306,7 @@ class Game {
             
             // Show cinematic view for final tag
             if (data.isLastTag) {
+                console.log('Last tag detected, showing cinematic view');
                 // Disable movement immediately
                 this.movement = {
                     forward: false,
@@ -316,19 +317,20 @@ class Game {
                 };
                 this.sprintActive = false;
                 
-                // Get tagger and tagged player data
-                const tagger = this.players.get(data.tagger.id);
-                const tagged = this.players.get(data.tagged.id);
+                // Get tagger and tagged player data from the players Map
+                const tagger = {
+                    ...data.tagger,
+                    position: this.players.get(data.tagger.id).position
+                };
+                const tagged = {
+                    ...data.tagged,
+                    position: this.players.get(data.tagged.id).position
+                };
                 
-                if (tagger && tagged) {
-                    this.showCinematicView(data.tagger, data.tagged);
-                    
-                    // After cinematic, show game over
-                    setTimeout(() => {
-                        const gameOverModal = document.getElementById('game-over-modal');
-                        gameOverModal.style.display = 'block';
-                    }, this.cinematicDuration);
-                }
+                console.log('Tagger:', tagger);
+                console.log('Tagged:', tagged);
+                
+                this.showCinematicView(tagger, tagged);
             }
         });
 
@@ -923,6 +925,7 @@ class Game {
     }
 
     showCinematicView(tagger, tagged) {
+        console.log('Starting cinematic view');
         this.isCinematicView = true;
         this.cinematicStartTime = Date.now();
         this.lastTaggedPlayer = tagged;
@@ -959,12 +962,12 @@ class Game {
         
         // Calculate camera position for dramatic shot
         const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
-        const sideOffset = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(3); // Side offset for more dramatic angle
+        const sideOffset = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(3);
         const cameraPos = new THREE.Vector3()
             .copy(taggerPos)
             .add(sideOffset)
             .sub(direction.multiplyScalar(8));
-        cameraPos.y += 3; // Higher angle
+        cameraPos.y += 3;
         
         this.cinematicCamera.position.copy(cameraPos);
         this.cinematicCamera.lookAt(taggedPos);
@@ -972,6 +975,10 @@ class Game {
         // Disable all controls during cinematic
         document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
         this.isGameOver = true;
+
+        console.log('Cinematic view started');
+        console.log('Camera position:', cameraPos);
+        console.log('Looking at:', taggedPos);
     }
 
     updateCinematicView() {
@@ -1024,6 +1031,7 @@ class Game {
 
         // Update cinematic view if active
         if (this.isCinematicView) {
+            console.log('Rendering cinematic view');
             this.updateCinematicView();
             this.renderer.render(this.scene, this.cinematicCamera);
         } else {
