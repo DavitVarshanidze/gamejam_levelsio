@@ -29,6 +29,10 @@ class Game {
         this.jumpForce = 0.3;
         this.gravity = 0.015;
         this.verticalVelocity = 0;
+        this.mouseSensitivity = 0.001; // Reduced from 0.002 (50% reduction)
+        this.handModel = null;
+        this.handAnimationTime = 0;
+        this.isHandAnimating = false;
         this.init();
     }
 
@@ -117,6 +121,13 @@ class Game {
             if (username) {
                 this.startGame(username);
                 usernameModal.style.display = 'none';
+            }
+        });
+
+        // Add mouse click handler for tagging
+        document.addEventListener('mousedown', (e) => {
+            if (e.button === 0) { // Left click
+                this.animateHand();
             }
         });
 
@@ -240,6 +251,7 @@ class Game {
         this.socket.on('connect', () => {
             this.playerData.id = this.socket.id;
             this.socket.emit('join', this.playerData);
+            this.createHandModel(); // Add hand after connecting
         });
 
         this.socket.on('game-state', (gameState) => {
@@ -281,6 +293,7 @@ class Game {
                 this.playerData.isTagger = true;
                 this.playerData.color = '#FF0000';
                 this.updateGameStatus();
+                this.updateHandColor(); // Update hand color when tagged
             }
         });
 
@@ -591,9 +604,9 @@ class Game {
         const movementX = e.movementX || 0;
         const movementY = e.movementY || 0;
         
-        // Update camera rotation
-        this.cameraRotation -= movementX * 0.002;
-        this.cameraPitch -= movementY * 0.002;
+        // Update camera rotation with reduced sensitivity
+        this.cameraRotation -= movementX * this.mouseSensitivity;
+        this.cameraPitch -= movementY * this.mouseSensitivity;
         
         // Limit vertical rotation to prevent flipping
         this.cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.cameraPitch));
@@ -752,8 +765,82 @@ class Game {
         });
     }
 
+    createHandModel() {
+        const hand = new THREE.Group();
+        
+        // Create arm part
+        const armGeometry = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+        const armMaterial = new THREE.MeshStandardMaterial({ color: this.playerData.isTagger ? '#FF0000' : '#00FFFF' });
+        const arm = new THREE.Mesh(armGeometry, armMaterial);
+        arm.position.y = -0.3;
+        hand.add(arm);
+
+        // Create hand part
+        const handGeometry = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+        const handMesh = new THREE.Mesh(handGeometry, armMaterial);
+        handMesh.position.y = 0;
+        hand.add(handMesh);
+
+        // Position the hand in view
+        hand.position.set(0.4, -0.5, -0.5);
+        hand.rotation.x = Math.PI / 8;
+
+        this.handModel = hand;
+        this.camera.add(hand);
+    }
+
+    updateHandColor() {
+        if (this.handModel) {
+            this.handModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.color.setStyle(this.playerData.isTagger ? '#FF0000' : '#00FFFF');
+                }
+            });
+        }
+    }
+
+    animateHand() {
+        if (!this.isHandAnimating) {
+            this.isHandAnimating = true;
+            this.handAnimationTime = 0;
+            
+            // Emit tag attempt if player is tagger
+            if (this.playerData.isTagger) {
+                this.socket.emit('tag-attempt', this.playerData);
+            }
+        }
+    }
+
+    updateHandAnimation() {
+        if (this.isHandAnimating) {
+            this.handAnimationTime += 0.2;
+            
+            // Simple swing animation
+            if (this.handModel) {
+                const swingAngle = Math.PI / 4;
+                const progress = Math.min(1, this.handAnimationTime);
+                
+                // Swing forward and back
+                if (progress < 0.5) {
+                    this.handModel.rotation.x = Math.PI / 8 - swingAngle * (progress * 2);
+                } else {
+                    this.handModel.rotation.x = Math.PI / 8 - swingAngle * (2 - progress * 2);
+                }
+                
+                // Reset animation
+                if (progress >= 1) {
+                    this.isHandAnimating = false;
+                    this.handModel.rotation.x = Math.PI / 8;
+                }
+            }
+        }
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
+
+        // Update hand animation
+        this.updateHandAnimation();
 
         // Animate clouds
         this.clouds.forEach(cloud => {
