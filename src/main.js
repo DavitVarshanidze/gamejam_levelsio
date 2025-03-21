@@ -695,9 +695,9 @@ class Game {
 
         // Calculate movement relative to camera view
         const forward = new THREE.Vector3(
-            Math.sin(this.cameraRotation),
+            -Math.sin(this.cameraRotation),
             0,
-            Math.cos(this.cameraRotation)
+            -Math.cos(this.cameraRotation)
         );
         const right = new THREE.Vector3(
             Math.sin(this.cameraRotation + Math.PI/2),
@@ -709,13 +709,14 @@ class Game {
         forward.normalize();
         right.normalize();
 
+        // Invert forward/backward movement
         if (this.movement.forward) {
-            moveX += forward.x * speed;
-            moveZ += forward.z * speed;
-        }
-        if (this.movement.backward) {
             moveX -= forward.x * speed;
             moveZ -= forward.z * speed;
+        }
+        if (this.movement.backward) {
+            moveX += forward.x * speed;
+            moveZ += forward.z * speed;
         }
         if (this.movement.left) {
             moveX -= right.x * speed;
@@ -744,10 +745,12 @@ class Game {
             this.movement.jumping = false;
         }
 
-        // Apply horizontal movement
+        // Apply horizontal movement with smoothing
         if (moveX !== 0 || moveZ !== 0) {
-            this.playerData.position.x += moveX;
-            this.playerData.position.z += moveZ;
+            // Add slight smoothing to movement
+            const smoothFactor = 0.8;
+            this.playerData.position.x += moveX * smoothFactor;
+            this.playerData.position.z += moveZ * smoothFactor;
 
             // Keep player within bounds
             this.playerData.position.x = Math.max(-200, Math.min(200, this.playerData.position.x));
