@@ -2,13 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Tag Game - Multiplayer</title>
     <style>
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
+        touch-action: none;
+        user-select: none;
       }
       body {
         overflow: hidden;
@@ -225,6 +227,101 @@
           transform: translate(-50%, 0);
         }
       }
+      #mobile-controls {
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1000;
+        display: none; /* Hidden by default, shown on mobile */
+      }
+      .joystick-container {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+      }
+      .joystick {
+        position: absolute;
+        width: 50px;
+        height: 50px;
+        background: rgba(255, 255, 255, 0.5);
+        border-radius: 50%;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        cursor: pointer;
+      }
+      #tag-button {
+        position: fixed;
+        bottom: 40px;
+        right: 40px;
+        width: 80px;
+        height: 80px;
+        background: rgba(255, 0, 0, 0.5);
+        border-radius: 50%;
+        display: none; /* Hidden by default, shown on mobile */
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-weight: bold;
+        font-size: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        cursor: pointer;
+      }
+      #sprint-button {
+        position: fixed;
+        bottom: 140px;
+        right: 40px;
+        width: 60px;
+        height: 60px;
+        background: rgba(0, 255, 255, 0.5);
+        border-radius: 50%;
+        display: none; /* Hidden by default, shown on mobile */
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-weight: bold;
+        font-size: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        cursor: pointer;
+      }
+      @media (max-width: 768px) {
+        #mobile-controls,
+        #tag-button,
+        #sprint-button {
+          display: flex;
+        }
+      }
+      @media (max-width: 480px) {
+        #leaderboard {
+          font-size: 12px;
+          top: 10px;
+          right: 10px;
+          max-width: 150px;
+        }
+        .joystick-container {
+          width: 100px;
+          height: 100px;
+        }
+        .joystick {
+          width: 40px;
+          height: 40px;
+        }
+        #tag-button {
+          width: 70px;
+          height: 70px;
+          right: 20px;
+          bottom: 20px;
+        }
+        #sprint-button {
+          width: 50px;
+          height: 50px;
+          right: 20px;
+          bottom: 100px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -269,6 +366,13 @@
         </tbody>
       </table>
     </div>
+    <div id="mobile-controls">
+      <div class="joystick-container">
+        <div class="joystick"></div>
+      </div>
+    </div>
+    <div id="tag-button">TAG</div>
+    <div id="sprint-button">SPRINT</div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html> 

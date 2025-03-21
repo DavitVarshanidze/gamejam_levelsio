@@ -49,6 +49,16 @@ class Game {
         this.lastTaggedPlayer = null;
         this.lastTaggerPlayer = null;
         this.lastUpdateTime = performance.now();
+
+        // Mobile controls state
+        this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        this.joystickPosition = { x: 0, y: 0 };
+        this.isSprinting = false;
+        
+        if (this.isMobile) {
+            this.setupMobileControls();
+        }
+
         this.init();
     }
 
@@ -1115,33 +1125,59 @@ class Game {
     updatePlayerPosition() {
         if (!this.playerData || this.isGameOver) return;
 
-        // Calculate delta time for smooth movement
         const currentTime = performance.now();
-        const deltaTime = (currentTime - this.lastUpdateTime) / 16.67; // Normalize to 60fps
+        const deltaTime = (currentTime - this.lastUpdateTime) / 16.67;
         this.lastUpdateTime = currentTime;
 
         const speed = this.sprintActive ? this.sprintSpeed : this.moveSpeed;
         
-        // Calculate target velocity based on input
+        // Calculate movement direction
         this.targetVelocity.set(0, 0, 0);
         
-        // Get movement direction relative to camera
-        const forward = new THREE.Vector3(
-            -Math.sin(this.cameraRotation),
-            0,
-            -Math.cos(this.cameraRotation)
-        );
-        const right = new THREE.Vector3(
-            Math.sin(this.cameraRotation + Math.PI/2),
-            0,
-            Math.cos(this.cameraRotation + Math.PI/2)
-        );
+        if (this.isMobile) {
+            // Use joystick position for movement direction on mobile
+            const forward = new THREE.Vector3(
+                -Math.sin(this.cameraRotation),
+                0,
+                -Math.cos(this.cameraRotation)
+            );
+            const right = new THREE.Vector3(
+                Math.sin(this.cameraRotation + Math.PI/2),
+                0,
+                Math.cos(this.cameraRotation + Math.PI/2)
+            );
 
-        // Add movement inputs without normalizing yet
-        if (this.movement.forward) this.targetVelocity.add(forward);
-        if (this.movement.backward) this.targetVelocity.sub(forward);
-        if (this.movement.left) this.targetVelocity.sub(right);
-        if (this.movement.right) this.targetVelocity.add(right);
+            // Normalize joystick input
+            const joystickLength = Math.sqrt(
+                this.joystickPosition.x * this.joystickPosition.x + 
+                this.joystickPosition.y * this.joystickPosition.y
+            );
+            
+            if (joystickLength > 0) {
+                const normalizedX = this.joystickPosition.x / 35; // maxDistance
+                const normalizedY = this.joystickPosition.y / 35;
+                
+                this.targetVelocity.add(forward.multiplyScalar(-normalizedY));
+                this.targetVelocity.add(right.multiplyScalar(normalizedX));
+            }
+        } else {
+            // Existing keyboard controls
+            const forward = new THREE.Vector3(
+                -Math.sin(this.cameraRotation),
+                0,
+                -Math.cos(this.cameraRotation)
+            );
+            const right = new THREE.Vector3(
+                Math.sin(this.cameraRotation + Math.PI/2),
+                0,
+                Math.cos(this.cameraRotation + Math.PI/2)
+            );
+
+            if (this.movement.forward) this.targetVelocity.add(forward);
+            if (this.movement.backward) this.targetVelocity.sub(forward);
+            if (this.movement.left) this.targetVelocity.sub(right);
+            if (this.movement.right) this.targetVelocity.add(right);
+        }
 
         // Normalize and apply speed if moving
         if (this.targetVelocity.lengthSq() > 0.0001) {
@@ -1682,6 +1718,136 @@ class Game {
         // Update position
         this.socket.emit('move', this.playerData);
         this.updateCameraPosition();
+    }
+
+    setupMobileControls() {
+        const joystickContainer = document.querySelector('.joystick-container');
+        const joystick = document.querySelector('.joystick');
+        const tagButton = document.getElementById('tag-button');
+        const sprintButton = document.getElementById('sprint-button');
+        
+        let isDragging = false;
+        let startX, startY;
+        const maxDistance = 35; // Maximum joystick movement radius
+
+        // Joystick touch handlers
+        const handleStart = (e) => {
+            const touch = e.touches[0];
+            isDragging = true;
+            startX = touch.clientX - this.joystickPosition.x;
+            startY = touch.clientY - this.joystickPosition.y;
+            e.preventDefault();
+        };
+
+        const handleMove = (e) => {
+            if (!isDragging) return;
+            
+            const touch = e.touches[0];
+            let deltaX = touch.clientX - startX;
+            let deltaY = touch.clientY - startY;
+            
+            // Calculate distance from center
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // Limit movement to maxDistance
+            if (distance > maxDistance) {
+                const angle = Math.atan2(deltaY, deltaX);
+                deltaX = Math.cos(angle) * maxDistance;
+                deltaY = Math.sin(angle) * maxDistance;
+            }
+            
+            // Update joystick position
+            this.joystickPosition.x = deltaX;
+            this.joystickPosition.y = deltaY;
+            
+            // Update joystick visual position
+            joystick.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+            
+            // Update movement based on joystick position
+            this.movement.forward = deltaY < -10;
+            this.movement.backward = deltaY > 10;
+            this.movement.left = deltaX < -10;
+            this.movement.right = deltaX > 10;
+            
+            e.preventDefault();
+        };
+
+        const handleEnd = (e) => {
+            isDragging = false;
+            this.joystickPosition = { x: 0, y: 0 };
+            joystick.style.transform = 'translate(0px, 0px)';
+            
+            // Reset movement
+            this.movement.forward = false;
+            this.movement.backward = false;
+            this.movement.left = false;
+            this.movement.right = false;
+            
+            e.preventDefault();
+        };
+
+        // Add touch event listeners for joystick
+        joystickContainer.addEventListener('touchstart', handleStart, { passive: false });
+        joystickContainer.addEventListener('touchmove', handleMove, { passive: false });
+        joystickContainer.addEventListener('touchend', handleEnd, { passive: false });
+        joystickContainer.addEventListener('touchcancel', handleEnd, { passive: false });
+
+        // Tag button handler
+        tagButton.addEventListener('touchstart', (e) => {
+            this.animateHand();
+            e.preventDefault();
+        }, { passive: false });
+
+        // Sprint button handlers
+        let sprintTimeout;
+        sprintButton.addEventListener('touchstart', (e) => {
+            this.sprintActive = true;
+            this.isSprinting = true;
+            sprintButton.style.background = 'rgba(0, 255, 255, 0.8)';
+            e.preventDefault();
+        }, { passive: false });
+
+        sprintButton.addEventListener('touchend', (e) => {
+            this.sprintActive = false;
+            this.isSprinting = false;
+            sprintButton.style.background = 'rgba(0, 255, 255, 0.5)';
+            e.preventDefault();
+        }, { passive: false });
+
+        // Prevent default touch behaviors
+        document.addEventListener('touchmove', (e) => {
+            if (e.target.closest('#mobile-controls') || 
+                e.target.closest('#tag-button') || 
+                e.target.closest('#sprint-button')) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        // Handle orientation change
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                this.handleResize();
+            }, 100);
+        });
+    }
+
+    handleResize() {
+        // ... existing resize code ...
+        
+        // Update camera aspect ratio
+        if (this.camera) {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+        }
+        if (this.cinematicCamera) {
+            this.cinematicCamera.aspect = window.innerWidth / window.innerHeight;
+            this.cinematicCamera.updateProjectionMatrix();
+        }
+        
+        // Update renderer size
+        if (this.renderer) {
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        }
     }
 }
 
