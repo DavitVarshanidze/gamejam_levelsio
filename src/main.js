@@ -25,10 +25,10 @@ class Game {
             right: false,
             jumping: false
         };
-        this.moveSpeed = 0.2;
-        this.sprintSpeed = 0.4;
-        this.acceleration = 0.1;
-        this.deceleration = 0.15;
+        this.moveSpeed = 0.3; // Increased base speed
+        this.sprintSpeed = 0.5; // Increased sprint speed
+        this.acceleration = 0.2; // Increased acceleration
+        this.deceleration = 0.3; // Increased deceleration
         this.currentVelocity = new THREE.Vector3();
         this.targetVelocity = new THREE.Vector3();
         this.collisionBoxes = [];
@@ -48,6 +48,7 @@ class Game {
         this.cinematicDuration = 3000; // 3 seconds
         this.lastTaggedPlayer = null;
         this.lastTaggerPlayer = null;
+        this.lastUpdateTime = performance.now();
         this.init();
     }
 
@@ -1127,6 +1128,11 @@ class Game {
     updatePlayerPosition() {
         if (!this.playerData || this.isGameOver) return;
 
+        // Calculate delta time for smooth movement
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - this.lastUpdateTime) / 16.67; // Normalize to 60fps
+        this.lastUpdateTime = currentTime;
+
         const speed = this.sprintActive ? this.sprintSpeed : this.moveSpeed;
         
         // Calculate target velocity based on input
@@ -1144,104 +1150,116 @@ class Game {
             Math.cos(this.cameraRotation + Math.PI/2)
         );
 
-        // Normalize vectors
-        forward.normalize();
-        right.normalize();
-
-        // Apply movement inputs
+        // Add movement inputs without normalizing yet
         if (this.movement.forward) this.targetVelocity.add(forward);
         if (this.movement.backward) this.targetVelocity.sub(forward);
         if (this.movement.left) this.targetVelocity.sub(right);
         if (this.movement.right) this.targetVelocity.add(right);
 
         // Normalize and apply speed if moving
-        if (this.targetVelocity.lengthSq() > 0) {
+        if (this.targetVelocity.lengthSq() > 0.0001) {
             this.targetVelocity.normalize().multiplyScalar(speed);
         }
 
-        // Smoothly interpolate current velocity towards target velocity
-        const acceleration = this.targetVelocity.lengthSq() > 0 ? this.acceleration : this.deceleration;
-        this.currentVelocity.lerp(this.targetVelocity, acceleration);
+        // Smoothly interpolate current velocity towards target velocity with delta time
+        const acceleration = this.targetVelocity.lengthSq() > 0.0001 ? this.acceleration : this.deceleration;
+        this.currentVelocity.lerp(this.targetVelocity, acceleration * deltaTime);
 
-        // Store current position for collision detection
-        const currentPosition = new THREE.Vector3(
-            this.playerData.position.x,
-            this.playerData.position.y,
-            this.playerData.position.z
-        );
-
-        // Apply vertical movement (jumping/falling)
-        this.verticalVelocity -= this.gravity;
-        this.playerData.position.y += this.verticalVelocity;
-
-        // Ground collision
-        if (this.playerData.position.y <= 1) {
-            this.playerData.position.y = 1;
-            this.verticalVelocity = 0;
-            this.movement.jumping = false;
-        }
-
-        // Apply horizontal movement
-        const newPosition = new THREE.Vector3(
-            currentPosition.x + this.currentVelocity.x,
-            this.playerData.position.y,
-            currentPosition.z + this.currentVelocity.z
-        );
-
-        // Check for collisions with buildings and obstacles
-        if (!this.checkCollisions(newPosition)) {
-            this.playerData.position.x = newPosition.x;
-            this.playerData.position.z = newPosition.z;
-        } else {
-            // Try sliding along walls
-            const slideX = new THREE.Vector3(
-                newPosition.x,
+        // Only process movement if velocity is significant
+        if (this.currentVelocity.lengthSq() > 0.0001) {
+            // Store current position for collision detection
+            const currentPosition = new THREE.Vector3(
+                this.playerData.position.x,
                 this.playerData.position.y,
-                currentPosition.z
-            );
-            const slideZ = new THREE.Vector3(
-                currentPosition.x,
-                this.playerData.position.y,
-                newPosition.z
+                this.playerData.position.z
             );
 
-            if (!this.checkCollisions(slideX)) {
-                this.playerData.position.x = slideX.x;
-            }
-            if (!this.checkCollisions(slideZ)) {
-                this.playerData.position.z = slideZ.z;
-            }
-        }
+            // Apply movement with delta time
+            const newPosition = new THREE.Vector3(
+                currentPosition.x + this.currentVelocity.x * deltaTime,
+                this.playerData.position.y,
+                currentPosition.z + this.currentVelocity.z * deltaTime
+            );
 
-        // Keep player within map bounds
-        const mapBounds = 390; // Slightly less than half the ground size
-        this.playerData.position.x = Math.max(-mapBounds, Math.min(mapBounds, this.playerData.position.x));
-        this.playerData.position.z = Math.max(-mapBounds, Math.min(mapBounds, this.playerData.position.z));
+            // Simplified collision check
+            if (!this.checkCollisions(newPosition)) {
+                this.playerData.position.x = newPosition.x;
+                this.playerData.position.z = newPosition.z;
+            } else {
+                // Try sliding along walls with simplified checks
+                const slideX = new THREE.Vector3(
+                    newPosition.x,
+                    this.playerData.position.y,
+                    currentPosition.z
+                );
+                const slideZ = new THREE.Vector3(
+                    currentPosition.x,
+                    this.playerData.position.y,
+                    newPosition.z
+                );
 
-        // Update camera and emit position if moved
-        if (!currentPosition.equals(this.playerData.position)) {
-            this.updateCameraPosition();
-            this.socket.emit('move', this.playerData);
+                if (!this.checkCollisions(slideX)) {
+                    this.playerData.position.x = slideX.x;
+                }
+                if (!this.checkCollisions(slideZ)) {
+                    this.playerData.position.z = slideZ.z;
+                }
+            }
+
+            // Apply vertical movement
+            this.verticalVelocity -= this.gravity * deltaTime;
+            this.playerData.position.y += this.verticalVelocity * deltaTime;
+
+            // Ground collision
+            if (this.playerData.position.y <= 1) {
+                this.playerData.position.y = 1;
+                this.verticalVelocity = 0;
+                this.movement.jumping = false;
+            }
+
+            // Keep player within map bounds
+            const mapBounds = 390;
+            this.playerData.position.x = Math.max(-mapBounds, Math.min(mapBounds, this.playerData.position.x));
+            this.playerData.position.z = Math.max(-mapBounds, Math.min(mapBounds, this.playerData.position.z));
+
+            // Only emit position if moved significantly
+            if (!currentPosition.equals(this.playerData.position)) {
+                this.updateCameraPosition();
+                // Throttle position updates to server
+                if (!this._lastEmitTime || currentTime - this._lastEmitTime > 50) { // 20 updates per second
+                    this.socket.emit('move', this.playerData);
+                    this._lastEmitTime = currentTime;
+                }
+            }
         }
     }
 
     checkCollisions(position) {
-        // Create player collision box
-        const playerBox = new THREE.Box3(
-            new THREE.Vector3(
-                position.x - this.playerRadius,
-                position.y,
-                position.z - this.playerRadius
-            ),
-            new THREE.Vector3(
-                position.x + this.playerRadius,
-                position.y + this.playerHeight,
-                position.z + this.playerRadius
-            )
+        // Create player collision box only when needed
+        if (!this._playerBox) {
+            this._playerBox = new THREE.Box3();
+        }
+
+        // Update player box position
+        this._playerBox.min.set(
+            position.x - this.playerRadius,
+            position.y,
+            position.z - this.playerRadius
+        );
+        this._playerBox.max.set(
+            position.x + this.playerRadius,
+            position.y + this.playerHeight,
+            position.z + this.playerRadius
         );
 
-        // Check collision with all obstacle boxes
-        return this.collisionBoxes.some(box => playerBox.intersectsBox(box));
+        // Quick check for nearby obstacles only
+        return this.collisionBoxes.some(box => {
+            // Skip collision check if too far away
+            if (Math.abs(box.min.x - position.x) > 20 || Math.abs(box.min.z - position.z) > 20) {
+                return false;
+            }
+            return this._playerBox.intersectsBox(box);
+        });
     }
 
     updateLeaderboard() {
@@ -1381,17 +1399,19 @@ class Game {
         this.lastTaggerPlayer = tagger;
 
         // Create cinematic camera with wider FOV for dramatic effect
-        this.cinematicCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.cinematicCamera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
         
-        // Add black bars with dramatic fade
+        // Add black bars and player info with CoD style
         const blackBars = document.createElement('div');
         blackBars.id = 'cinematic-bars';
         blackBars.innerHTML = `
             <div class="black-bar top"></div>
             <div class="player-info">
-                <span class="tagger-name">${tagger.username}</span>
-                <span class="tagged-name">ELIMINATED</span>
-                <span class="victim-name">${tagged.username}</span>
+                <div class="kill-feed">
+                    <span class="tagger-name">${tagger.username}</span>
+                    <span class="eliminated">☠ ELIMINATED</span>
+                    <span class="victim-name">${tagged.username}</span>
+                </div>
             </div>
             <div class="black-bar bottom"></div>
         `;
@@ -1408,33 +1428,105 @@ class Game {
             tagged.position.y + this.eyeHeight,
             tagged.position.z
         );
-        
-        // Calculate camera position for dramatic shot
+
+        // Store initial positions for animation
+        this.cinematicInitialPos = {
+            tagger: taggerPos.clone(),
+            tagged: taggedPos.clone()
+        };
+
+        // Calculate initial camera position
         const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
-        const sideOffset = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(3);
+        const distance = taggerPos.distanceTo(taggedPos);
+        
+        // Position camera behind and slightly above the tagger
         const cameraPos = new THREE.Vector3()
             .copy(taggerPos)
-            .add(sideOffset)
-            .sub(direction.multiplyScalar(8));
-        cameraPos.y += 3;
-        
+            .sub(direction.multiplyScalar(distance * 0.3))
+            .add(new THREE.Vector3(0, 2, 0));
+
         this.cinematicCamera.position.copy(cameraPos);
         this.cinematicCamera.lookAt(taggedPos);
+
+        // Store camera parameters for animation
+        this.cinematicParams = {
+            startPos: cameraPos.clone(),
+            startLookAt: taggedPos.clone(),
+            rotationCenter: taggedPos.clone(),
+            radius: distance * 0.5,
+            angle: 0
+        };
 
         // Disable all controls during cinematic
         document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
         this.isGameOver = true;
 
-        console.log('Cinematic view started');
-        console.log('Camera position:', cameraPos);
-        console.log('Looking at:', taggedPos);
+        // Add CSS for CoD style kill feed
+        const style = document.createElement('style');
+        style.textContent = `
+            #cinematic-bars {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                pointer-events: none;
+                z-index: 9999;
+            }
+            .black-bar {
+                height: 20vh;
+                background: black;
+                animation: slideIn 0.5s ease-out;
+            }
+            .player-info {
+                position: absolute;
+                bottom: 25vh;
+                width: 100%;
+                text-align: center;
+                color: white;
+                font-size: 32px;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+                animation: fadeIn 0.5s ease-out;
+            }
+            .kill-feed {
+                background: rgba(0,0,0,0.7);
+                padding: 10px 20px;
+                border-radius: 5px;
+                display: inline-block;
+            }
+            .tagger-name {
+                color: #ff4444;
+                font-weight: bold;
+            }
+            .eliminated {
+                color: #ffffff;
+                margin: 0 10px;
+            }
+            .victim-name {
+                color: #44aaff;
+                font-weight: bold;
+            }
+            @keyframes slideIn {
+                from { height: 0; }
+                to { height: 20vh; }
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     updateCinematicView() {
         if (!this.isCinematicView) return;
 
         const elapsed = Date.now() - this.cinematicStartTime;
-        const progress = Math.min(elapsed / this.cinematicDuration, 1);
+        const duration = 3000; // 3 seconds
+        const progress = Math.min(elapsed / duration, 1);
 
         if (progress >= 1) {
             // End cinematic view
@@ -1444,35 +1536,39 @@ class Game {
             return;
         }
 
-        // Slow motion effect
-        const taggerPos = new THREE.Vector3(
-            this.lastTaggerPlayer.position.x,
-            this.lastTaggerPlayer.position.y + this.eyeHeight,
-            this.lastTaggerPlayer.position.z
-        );
-        const taggedPos = new THREE.Vector3(
-            this.lastTaggedPlayer.position.x,
-            this.lastTaggedPlayer.position.y + this.eyeHeight,
-            this.lastTaggedPlayer.position.z
+        // Calculate camera position for dramatic rotating shot
+        const { rotationCenter, radius } = this.cinematicParams;
+        
+        // Update rotation angle
+        this.cinematicParams.angle += 0.02; // Speed of rotation
+
+        // Calculate new camera position
+        const cameraX = rotationCenter.x + radius * Math.cos(this.cinematicParams.angle);
+        const cameraZ = rotationCenter.z + radius * Math.sin(this.cinematicParams.angle);
+        
+        // Add vertical movement
+        const verticalOffset = 2 + Math.sin(progress * Math.PI) * 1.5;
+        
+        // Update camera position with smooth interpolation
+        this.cinematicCamera.position.set(
+            cameraX,
+            rotationCenter.y + verticalOffset,
+            cameraZ
         );
 
-        // Create dramatic camera movement
-        const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
-        const sideOffset = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(3 + Math.sin(progress * Math.PI) * 0.5);
-        const cameraPos = new THREE.Vector3()
-            .copy(taggerPos)
-            .add(sideOffset)
-            .sub(direction.multiplyScalar(8 - Math.sin(progress * Math.PI) * 2));
+        // Make camera always look at the center point between tagger and tagged
+        const lookAtPoint = new THREE.Vector3().addVectors(
+            this.cinematicInitialPos.tagger,
+            this.cinematicInitialPos.tagged
+        ).multiplyScalar(0.5);
         
-        // Add dramatic camera movement
-        cameraPos.y += 3 + Math.sin(progress * Math.PI * 2) * 0.5;
+        // Add some vertical movement to the look-at point
+        lookAtPoint.y += Math.sin(progress * Math.PI * 2) * 0.5;
         
-        this.cinematicCamera.position.copy(cameraPos);
-        this.cinematicCamera.lookAt(
-            taggedPos.x,
-            taggedPos.y + Math.sin(progress * Math.PI) * 0.5,
-            taggedPos.z
-        );
+        this.cinematicCamera.lookAt(lookAtPoint);
+
+        // Add dramatic tilt
+        this.cinematicCamera.rotation.z = Math.sin(progress * Math.PI * 2) * 0.1;
     }
 
     animate() {
