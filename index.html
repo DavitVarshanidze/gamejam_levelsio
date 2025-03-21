@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tag Game - Multiplayer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+      }
+      #game-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        z-index: 1000;
+      }
+      #username-modal {
+        display: block;
+      }
+      #game-over-modal {
+        display: none;
+        min-width: 300px;
+      }
+      input {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+        border: none;
+        width: 200px;
+      }
+      button {
+        padding: 10px 20px;
+        background: #4CAF50;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+      }
+      .hud {
+        position: fixed;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.5);
+        color: white;
+        border-radius: 5px;
+        z-index: 100;
+      }
+      #player-count {
+        top: 20px;
+        right: 20px;
+      }
+      #game-status {
+        top: 20px;
+        left: 20px;
+      }
+      #sprint-status {
+        bottom: 20px;
+        right: 20px;
+      }
+      #controls-info {
+        bottom: 20px;
+        left: 20px;
+        font-size: 14px;
+      }
+      .shield-active {
+        color: #00ff00;
+      }
+      .sprint-ready {
+        color: #00ff00;
+      }
+      .sprint-cooldown {
+        color: #ff0000;
+      }
+      .mvp {
+        color: #ffd700;
+        font-size: 1.2em;
+        margin: 10px 0;
+      }
+      .game-result {
+        font-size: 1.5em;
+        margin-bottom: 20px;
+      }
+      .winner {
+        color: #00ff00;
+      }
+      .loser {
+        color: #ff0000;
+      }
+      #scoreboard {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        min-width: 300px;
+        z-index: 1000;
+      }
+      .scoreboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+      .scoreboard-table th, .scoreboard-table td {
+        padding: 8px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .tagger-row {
+        color: #FF0000;
+      }
+      .runner-row {
+        color: #00FFFF;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container"></div>
+    <div id="username-modal" class="modal">
+      <h2>Enter Your Name</h2>
+      <input type="text" id="username-input" maxlength="15" placeholder="Your name">
+      <br>
+      <button id="start-button">Start Game</button>
+    </div>
+    <div id="game-over-modal" class="modal">
+      <h2>Game Over!</h2>
+      <div id="game-result" class="game-result"></div>
+      <div class="mvp">
+        MVP: <span id="mvp-name"></span><br>
+        Score: <span id="mvp-score"></span>
+      </div>
+      <div>New round starting in 5 seconds...</div>
+    </div>
+    <div id="player-count" class="hud">Players: 0 | Taggers: 0 | Time: 600s</div>
+    <div id="game-status" class="hud">Waiting for players...</div>
+    <div id="sprint-status" class="hud sprint-ready">Sprint Ready</div>
+    <div id="controls-info" class="hud">
+      Controls:<br>
+      WASD/Arrows - Move<br>
+      Shift - Sprint (3s)<br>
+      Mouse - Look around
+    </div>
+    <div id="scoreboard">
+      <h2>Scoreboard</h2>
+      <table class="scoreboard-table">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Role</th>
+            <th>Score</th>
+            <th>Distance</th>
+          </tr>
+        </thead>
+        <tbody id="scoreboard-body">
+        </tbody>
+      </table>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html> 
