@@ -22,7 +22,7 @@ class Game {
             left: false,
             right: false
         };
-        this.moveSpeed = 0.2;
+        this.moveSpeed = 0.15;
         this.init();
     }
 
@@ -426,45 +426,44 @@ class Game {
     }
 
     updateCameraPosition() {
-        if (this.playerData) {
-            const distance = 8;
-            const height = 5;
-            
-            // Calculate camera position based on player's position and rotation
-            const cameraX = this.playerData.position.x + Math.sin(this.cameraRotation) * distance;
-            const cameraZ = this.playerData.position.z + Math.cos(this.cameraRotation) * distance;
-            
-            this.camera.position.set(
-                cameraX,
-                this.playerData.position.y + height,
-                cameraZ
-            );
+        if (!this.playerData) return;
 
-            // Look at player
-            this.camera.lookAt(
-                this.playerData.position.x,
-                this.playerData.position.y,
-                this.playerData.position.z
-            );
+        const distance = 8;
+        const height = 5;
+        
+        // Calculate camera position based on rotation only
+        const cameraX = this.playerData.position.x + Math.sin(this.cameraRotation) * distance;
+        const cameraZ = this.playerData.position.z + Math.cos(this.cameraRotation) * distance;
+        
+        this.camera.position.set(
+            cameraX,
+            this.playerData.position.y + height,
+            cameraZ
+        );
 
-            // Update player's last position for distance calculation
-            if (!this.playerData.lastPosition) {
-                this.playerData.lastPosition = { ...this.playerData.position };
-            } else {
-                const dx = this.playerData.position.x - this.playerData.lastPosition.x;
-                const dz = this.playerData.position.z - this.playerData.lastPosition.z;
-                const distance = Math.sqrt(dx * dx + dz * dz);
-                this.playerData.distanceRun += distance;
-                this.playerData.lastPosition = { ...this.playerData.position };
-            }
+        // Look at player
+        this.camera.lookAt(
+            this.playerData.position.x,
+            this.playerData.position.y,
+            this.playerData.position.z
+        );
+
+        // Update player's last position for distance calculation
+        if (!this.playerData.lastPosition) {
+            this.playerData.lastPosition = { ...this.playerData.position };
+        } else {
+            const dx = this.playerData.position.x - this.playerData.lastPosition.x;
+            const dz = this.playerData.position.z - this.playerData.lastPosition.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            this.playerData.distanceRun += distance;
+            this.playerData.lastPosition = { ...this.playerData.position };
         }
     }
 
     handleMouseMove(e) {
-        if (this.playerData) {
-            const movementX = e.movementX || 0;
-            this.cameraRotation -= movementX * 0.002;
-        }
+        const movementX = e.movementX || 0;
+        this.cameraRotation -= movementX * 0.002;
+        this.updateCameraPosition();
     }
 
     handleKeyDown(e) {
@@ -521,24 +520,47 @@ class Game {
         let moveX = 0;
         let moveZ = 0;
 
-        // Calculate movement based on camera rotation
+        // Calculate movement relative to camera view
+        const forward = new THREE.Vector3(
+            -Math.sin(this.cameraRotation),
+            0,
+            -Math.cos(this.cameraRotation)
+        );
+        const right = new THREE.Vector3(
+            Math.sin(this.cameraRotation + Math.PI/2),
+            0,
+            Math.cos(this.cameraRotation + Math.PI/2)
+        );
+
+        // Normalize movement vectors for consistent speed in all directions
+        forward.normalize();
+        right.normalize();
+
         if (this.movement.forward) {
-            moveX += Math.sin(this.cameraRotation) * speed;
-            moveZ += Math.cos(this.cameraRotation) * speed;
+            moveX += forward.x * speed;
+            moveZ += forward.z * speed;
         }
         if (this.movement.backward) {
-            moveX -= Math.sin(this.cameraRotation) * speed;
-            moveZ -= Math.cos(this.cameraRotation) * speed;
+            moveX -= forward.x * speed;
+            moveZ -= forward.z * speed;
         }
         if (this.movement.left) {
-            moveX += Math.sin(this.cameraRotation - Math.PI/2) * speed;
-            moveZ += Math.cos(this.cameraRotation - Math.PI/2) * speed;
+            moveX -= right.x * speed;
+            moveZ -= right.z * speed;
         }
         if (this.movement.right) {
-            moveX += Math.sin(this.cameraRotation + Math.PI/2) * speed;
-            moveZ += Math.cos(this.cameraRotation + Math.PI/2) * speed;
+            moveX += right.x * speed;
+            moveZ += right.z * speed;
         }
 
+        // Normalize diagonal movement to maintain consistent speed
+        if (moveX !== 0 && moveZ !== 0) {
+            const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+            moveX = (moveX / length) * speed;
+            moveZ = (moveZ / length) * speed;
+        }
+
+        // Apply movement if any
         if (moveX !== 0 || moveZ !== 0) {
             this.playerData.position.x += moveX;
             this.playerData.position.z += moveZ;
@@ -548,7 +570,6 @@ class Game {
             this.playerData.position.z = Math.max(-200, Math.min(200, this.playerData.position.z));
 
             this.socket.emit('move', this.playerData);
-            this.updateCameraPosition();
         }
     }
 
@@ -585,6 +606,9 @@ class Game {
             }
         });
 
+        // Update camera position every frame to ensure smooth camera movement
+        this.updateCameraPosition();
+        
         // Update player position based on movement state
         this.updatePlayerPosition();
 
