@@ -621,8 +621,12 @@ class Game {
     }
 
     startGame(username) {
-        // Connect to server
-        this.socket = io('http://localhost:3000');
+        // Connect to server with automatic reconnection
+        this.socket = io('http://localhost:3000', {
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000
+        });
         
         // Create player with random spawn position
         const spawnPoint = this.getRandomSpawnPoint();

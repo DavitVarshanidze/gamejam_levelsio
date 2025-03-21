@@ -12,7 +12,7 @@ const io = new Server(httpServer, {
     cors: {
         origin: process.env.NODE_ENV === 'production' 
             ? 'https://tagrun.io' 
-            : 'http://localhost:3000',
+            : ['http://localhost:8081', 'http://localhost:3000'],
         methods: ['GET', 'POST']
     }
 });
@@ -24,7 +24,7 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
-            connectSrc: ["'self'", "wss://tagrun.io", "ws://localhost:3000"],
+            connectSrc: ["'self'", "wss://tagrun.io", "ws://localhost:8081", "ws://localhost:3000"],
             imgSrc: ["'self'", "data:", "blob:"],
             fontSrc: ["'self'", "data:"],
             objectSrc: ["'none'"],

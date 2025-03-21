@@ -15,8 +15,9 @@ module.exports = {
             directory: path.join(__dirname, 'dist'),
         },
         compress: true,
-        port: 8080,
-        hot: true
+        port: 8081,
+        hot: true,
+        open: true
     },
     optimization: {
         minimize: true,
