@@ -35,33 +35,26 @@ let gameState = {
 let gameInterval = null;
 
 function getMVP() {
-    let mvp = null;
-    let maxScore = -1;
-    let maxDistance = -1;
-
-    // If there are still runners, find the one who ran the most
-    const hasRunners = Object.values(gameState.players).some(p => !p.isTagger);
+    const players = Object.values(gameState.players);
+    let mvp = players[0];
     
-    Object.values(gameState.players).forEach(player => {
-        if (hasRunners) {
-            // Runners won, MVP is the one who ran the most
-            if (!player.isTagger && player.distanceRun > maxDistance) {
-                maxDistance = player.distanceRun;
-                mvp = player;
-            }
-        } else {
-            // All tagged, MVP is the one with most tags
-            if (player.score > maxScore) {
-                maxScore = player.score;
-                mvp = player;
-            }
-        }
-    });
-
+    // If there are still runners, MVP is based on distance
+    const hasRunners = players.some(p => !p.isTagger);
+    if (hasRunners) {
+        mvp = players.reduce((prev, curr) => {
+            return (!curr.isTagger && curr.distanceRun > prev.distanceRun) ? curr : prev;
+        });
+    } else {
+        // If all are taggers, MVP is based on score (tags)
+        mvp = players.reduce((prev, curr) => {
+            return curr.score > prev.score ? curr : prev;
+        });
+    }
+    
     return {
-        username: mvp ? mvp.username : 'None',
-        score: hasRunners ? Math.floor(maxDistance) : maxScore,
-        isRunner: hasRunners
+        username: mvp.username,
+        score: mvp.isTagger ? mvp.score : Math.floor(mvp.distanceRun),
+        isRunner: !mvp.isTagger
     };
 }
 
@@ -227,6 +220,53 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('tag-attempt', (taggerData) => {
+        const tagger = gameState.players[taggerData.id];
+        if (!tagger || !tagger.isTagger) return;
+
+        // Check for collisions with runners
+        const runners = Object.values(gameState.players).filter(p => !p.isTagger && !p.isShielded);
+        for (const runner of runners) {
+            const dx = tagger.position.x - runner.position.x;
+            const dz = tagger.position.z - runner.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+
+            if (distance < 2) { // Tag range
+                runner.isTagger = true;
+                runner.color = '#FF0000';
+                tagger.score++;
+
+                // Check if this is the last runner
+                const remainingRunners = Object.values(gameState.players).filter(p => !p.isTagger).length;
+                const isLastTag = remainingRunners === 0;
+
+                // Emit tagged event with last tag information
+                io.emit('tagged', {
+                    id: runner.id,
+                    tagger: tagger,
+                    tagged: runner,
+                    isLastTag: isLastTag
+                });
+
+                // If this was the last runner, emit game over after a delay
+                if (isLastTag) {
+                    setTimeout(() => {
+                        const mvp = getMVP();
+                        io.emit('game-over', {
+                            runnersWon: false,
+                            mvp: mvp
+                        });
+                        
+                        // Reset game after 5 seconds
+                        setTimeout(() => {
+                            resetGame();
+                        }, 5000);
+                    }, 3000); // Wait for cinematic to finish
+                }
+            }
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);
         if (gameState.players[socket.id]) {
@@ -249,6 +289,52 @@ io.on('connection', (socket) => {
         io.emit('game-state', gameState);
     });
 });
+
+function resetGame() {
+    // Reset all players to runners except one random tagger
+    const playerIds = Object.keys(gameState.players);
+    const newTaggerId = playerIds[Math.floor(Math.random() * playerIds.length)];
+    
+    for (const id of playerIds) {
+        const player = gameState.players[id];
+        player.isTagger = id === newTaggerId;
+        player.color = player.isTagger ? '#FF0000' : '#00FFFF';
+        player.score = 0;
+        player.distanceRun = 0;
+        player.isShielded = true;
+        
+        // Random spawn position
+        const spawnPoint = getRandomSpawnPoint();
+        player.position = spawnPoint;
+    }
+    
+    // Update game state
+    gameState.roundEnded = false;
+    updateGameState();
+    
+    // Emit new game state to all clients
+    io.emit('game-state', gameState);
+}
+
+function getRandomSpawnPoint() {
+    const spawnZones = [
+        { x: [-180, -120], z: [-180, -120] },
+        { x: [-180, -120], z: [120, 180] },
+        { x: [120, 180], z: [-180, -120] },
+        { x: [120, 180], z: [120, 180] },
+        { x: [-30, 30], z: [-180, -120] },
+        { x: [-30, 30], z: [120, 180] },
+        { x: [-180, -120], z: [-30, 30] },
+        { x: [120, 180], z: [-30, 30] }
+    ];
+
+    const zone = spawnZones[Math.floor(Math.random() * spawnZones.length)];
+    return {
+        x: zone.x[0] + Math.random() * (zone.x[1] - zone.x[0]),
+        y: 1,
+        z: zone.z[0] + Math.random() * (zone.z[1] - zone.z[0])
+    };
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
