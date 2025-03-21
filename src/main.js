@@ -91,7 +91,8 @@ class Game {
         // Initialize collision boxes array
         this.collisionBoxes = [];
 
-        // Add obstacles, buildings, and environment
+        // Add mountains, obstacles, and environment
+        this.addMountains();
         this.addObstacles();
         this.addClouds();
 
@@ -158,6 +159,109 @@ class Game {
 
         // Start animation loop
         this.animate();
+    }
+
+    addMountains() {
+        const mountainMaterial = new THREE.MeshStandardMaterial({
+            color: 0x4a6938,
+            metalness: 0.1,
+            roughness: 0.9,
+            flatShading: true
+        });
+
+        const snowMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.1,
+            roughness: 0.7,
+            flatShading: true
+        });
+
+        // Create mountain ranges along the edges
+        const mountainRanges = [
+            { start: [-400, -400], end: [400, -400], depth: 50 }, // Back range
+            { start: [-400, 400], end: [400, 400], depth: 50 },   // Front range
+            { start: [-400, -400], end: [-400, 400], depth: 50 }, // Left range
+            { start: [400, -400], end: [400, 400], depth: 50 }    // Right range
+        ];
+
+        mountainRanges.forEach(range => {
+            const rangeLength = Math.sqrt(
+                Math.pow(range.end[0] - range.start[0], 2) +
+                Math.pow(range.end[1] - range.start[1], 2)
+            );
+            
+            const numMountains = Math.floor(rangeLength / 40); // One mountain every 40 units
+            
+            for (let i = 0; i < numMountains; i++) {
+                const progress = i / (numMountains - 1);
+                const x = range.start[0] + (range.end[0] - range.start[0]) * progress;
+                const z = range.start[1] + (range.end[1] - range.start[1]) * progress;
+                
+                // Add random offset perpendicular to range direction
+                const perpX = -(range.end[1] - range.start[1]) / rangeLength;
+                const perpZ = (range.end[0] - range.start[0]) / rangeLength;
+                const offset = (Math.random() - 0.5) * range.depth;
+                
+                this.createMountain(
+                    x + perpX * offset,
+                    z + perpZ * offset,
+                    30 + Math.random() * 40, // Height between 30 and 70
+                    20 + Math.random() * 20,  // Base radius between 20 and 40
+                    mountainMaterial,
+                    snowMaterial
+                );
+            }
+        });
+    }
+
+    createMountain(x, z, height, baseRadius, mountainMaterial, snowMaterial) {
+        const segments = 8;
+        const mountainGeometry = new THREE.CylinderGeometry(0, baseRadius, height, segments);
+        const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
+        
+        // Create snow cap
+        const snowHeight = height * 0.2;
+        const snowRadius = baseRadius * 0.25;
+        const snowGeometry = new THREE.CylinderGeometry(0, snowRadius, snowHeight, segments);
+        const snow = new THREE.Mesh(snowGeometry, snowMaterial);
+        snow.position.y = height * 0.4;
+        
+        // Group mountain and snow
+        const mountainGroup = new THREE.Group();
+        mountainGroup.add(mountain);
+        mountainGroup.add(snow);
+        
+        // Add some random rotation for variety
+        mountainGroup.rotation.y = Math.random() * Math.PI * 2;
+        
+        // Position the mountain
+        mountainGroup.position.set(x, height/2, z);
+        
+        // Add some random smaller peaks around the main mountain
+        const numPeaks = Math.floor(Math.random() * 3) + 1;
+        for (let i = 0; i < numPeaks; i++) {
+            const angle = (i / numPeaks) * Math.PI * 2 + Math.random() * 0.5;
+            const distance = baseRadius * 0.6;
+            const peakX = Math.cos(angle) * distance;
+            const peakZ = Math.sin(angle) * distance;
+            const peakHeight = height * (0.4 + Math.random() * 0.3);
+            
+            const peakGeometry = new THREE.CylinderGeometry(0, baseRadius * 0.3, peakHeight, segments);
+            const peak = new THREE.Mesh(peakGeometry, mountainMaterial);
+            peak.position.set(peakX, peakHeight/2, peakZ);
+            peak.rotation.y = Math.random() * Math.PI * 2;
+            
+            // Add snow to smaller peaks
+            const peakSnowGeometry = new THREE.CylinderGeometry(0, baseRadius * 0.1, peakHeight * 0.2, segments);
+            const peakSnow = new THREE.Mesh(peakSnowGeometry, snowMaterial);
+            peakSnow.position.y = peakHeight * 0.4;
+            peak.add(peakSnow);
+            
+            mountainGroup.add(peak);
+        }
+        
+        // Add to scene
+        this.scene.add(mountainGroup);
     }
 
     addClouds() {
