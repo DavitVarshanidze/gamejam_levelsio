@@ -76,8 +76,9 @@ class Game {
         directionalLight.shadow.camera.far = 500;
         this.scene.add(directionalLight);
 
-        // Add ground (larger map)
-        const groundGeometry = new THREE.PlaneGeometry(800, 800);
+        // Add ground with grass
+        const groundSize = 800;
+        const groundGeometry = new THREE.PlaneGeometry(groundSize, groundSize, 100, 100);
         const groundMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x90EE90,
             metalness: 0.1,
@@ -87,6 +88,9 @@ class Game {
         ground.rotation.x = -Math.PI / 2;
         ground.receiveShadow = true;
         this.scene.add(ground);
+
+        // Add grass
+        this.addGrass(groundSize);
 
         // Initialize collision boxes array
         this.collisionBoxes = [];
@@ -161,6 +165,78 @@ class Game {
         this.animate();
     }
 
+    addGrass(groundSize) {
+        const grassGeometry = new THREE.PlaneGeometry(1, 1);
+        const grassMaterial = new THREE.MeshStandardMaterial({
+            color: 0x558833,
+            alphaTest: 0.5,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+
+        // Create grass instances
+        const grassCount = 10000;
+        const grass = new THREE.InstancedMesh(grassGeometry, grassMaterial, grassCount);
+        
+        const matrix = new THREE.Matrix4();
+        const position = new THREE.Vector3();
+        const rotation = new THREE.Euler();
+        const scale = new THREE.Vector3();
+        const quaternion = new THREE.Quaternion();
+
+        let index = 0;
+        const maxAttempts = grassCount * 2;
+        let attempts = 0;
+
+        while (index < grassCount && attempts < maxAttempts) {
+            attempts++;
+            
+            // Random position within ground bounds
+            position.x = (Math.random() - 0.5) * (groundSize - 20);
+            position.z = (Math.random() - 0.5) * (groundSize - 20);
+
+            // Skip if too close to buildings or obstacles
+            let tooClose = false;
+            for (const box of this.collisionBoxes) {
+                const dist = Math.sqrt(
+                    Math.pow(position.x - box.min.x, 2) + 
+                    Math.pow(position.z - box.min.z, 2)
+                );
+                if (dist < 5) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose) continue;
+
+            position.y = 0.5;
+            
+            // Random rotation around Y axis
+            rotation.set(
+                Math.random() * 0.2 - 0.1,
+                Math.random() * Math.PI * 2,
+                Math.random() * 0.2 - 0.1
+            );
+            
+            // Random scale
+            const grassHeight = 0.8 + Math.random() * 0.4;
+            scale.set(0.3, grassHeight, 1);
+
+            matrix.compose(
+                position,
+                quaternion.setFromEuler(rotation),
+                scale
+            );
+
+            grass.setMatrixAt(index, matrix);
+            index++;
+        }
+
+        grass.castShadow = true;
+        grass.receiveShadow = true;
+        this.scene.add(grass);
+    }
+
     addMountains() {
         const mountainMaterial = new THREE.MeshStandardMaterial({
             color: 0x4a6938,
@@ -176,6 +252,9 @@ class Game {
             flatShading: true
         });
 
+        // Store mountain positions to check for overlapping
+        const mountainPositions = [];
+
         // Create mountain ranges along the edges
         const mountainRanges = [
             { start: [-400, -400], end: [400, -400], depth: 50 }, // Back range
@@ -190,7 +269,7 @@ class Game {
                 Math.pow(range.end[1] - range.start[1], 2)
             );
             
-            const numMountains = Math.floor(rangeLength / 40); // One mountain every 40 units
+            const numMountains = Math.floor(rangeLength / 60); // Increased spacing between mountains
             
             for (let i = 0; i < numMountains; i++) {
                 const progress = i / (numMountains - 1);
@@ -202,20 +281,41 @@ class Game {
                 const perpZ = (range.end[0] - range.start[0]) / rangeLength;
                 const offset = (Math.random() - 0.5) * range.depth;
                 
-                this.createMountain(
-                    x + perpX * offset,
-                    z + perpZ * offset,
-                    30 + Math.random() * 40, // Height between 30 and 70
-                    20 + Math.random() * 20,  // Base radius between 20 and 40
-                    mountainMaterial,
-                    snowMaterial
-                );
+                const mountainX = x + perpX * offset;
+                const mountainZ = z + perpZ * offset;
+
+                // Check if too close to existing mountains
+                let tooClose = false;
+                for (const pos of mountainPositions) {
+                    const dist = Math.sqrt(
+                        Math.pow(mountainX - pos.x, 2) + 
+                        Math.pow(mountainZ - pos.z, 2)
+                    );
+                    if (dist < 50) { // Minimum distance between mountains
+                        tooClose = true;
+                        break;
+                    }
+                }
+
+                if (!tooClose) {
+                    const height = 50 + Math.random() * 40; // Taller mountains
+                    const baseRadius = 30 + Math.random() * 20; // Wider base
+                    this.createMountain(
+                        mountainX,
+                        mountainZ,
+                        height,
+                        baseRadius,
+                        mountainMaterial,
+                        snowMaterial
+                    );
+                    mountainPositions.push({ x: mountainX, z: mountainZ });
+                }
             }
         });
     }
 
     createMountain(x, z, height, baseRadius, mountainMaterial, snowMaterial) {
-        const segments = 8;
+        const segments = 12; // Increased segments for smoother mountains
         const mountainGeometry = new THREE.CylinderGeometry(0, baseRadius, height, segments);
         const mountain = new THREE.Mesh(mountainGeometry, mountainMaterial);
         
@@ -237,28 +337,12 @@ class Game {
         // Position the mountain
         mountainGroup.position.set(x, height/2, z);
         
-        // Add some random smaller peaks around the main mountain
-        const numPeaks = Math.floor(Math.random() * 3) + 1;
-        for (let i = 0; i < numPeaks; i++) {
-            const angle = (i / numPeaks) * Math.PI * 2 + Math.random() * 0.5;
-            const distance = baseRadius * 0.6;
-            const peakX = Math.cos(angle) * distance;
-            const peakZ = Math.sin(angle) * distance;
-            const peakHeight = height * (0.4 + Math.random() * 0.3);
-            
-            const peakGeometry = new THREE.CylinderGeometry(0, baseRadius * 0.3, peakHeight, segments);
-            const peak = new THREE.Mesh(peakGeometry, mountainMaterial);
-            peak.position.set(peakX, peakHeight/2, peakZ);
-            peak.rotation.y = Math.random() * Math.PI * 2;
-            
-            // Add snow to smaller peaks
-            const peakSnowGeometry = new THREE.CylinderGeometry(0, baseRadius * 0.1, peakHeight * 0.2, segments);
-            const peakSnow = new THREE.Mesh(peakSnowGeometry, snowMaterial);
-            peakSnow.position.y = peakHeight * 0.4;
-            peak.add(peakSnow);
-            
-            mountainGroup.add(peak);
-        }
+        // Add collision box for the mountain
+        const collisionBox = new THREE.Box3(
+            new THREE.Vector3(x - baseRadius, 0, z - baseRadius),
+            new THREE.Vector3(x + baseRadius, height, z + baseRadius)
+        );
+        this.collisionBoxes.push(collisionBox);
         
         // Add to scene
         this.scene.add(mountainGroup);
