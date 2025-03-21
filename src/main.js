@@ -80,9 +80,9 @@ class Game {
         const groundSize = 800;
         const groundGeometry = new THREE.PlaneGeometry(groundSize, groundSize, 100, 100);
         const groundMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x90EE90,
+            color: 0x3a5a40, // Darker green color that matches grass
             metalness: 0.1,
-            roughness: 0.8
+            roughness: 0.9  // Increased roughness for more natural look
         });
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         ground.rotation.x = -Math.PI / 2;
