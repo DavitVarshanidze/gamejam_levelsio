@@ -17,6 +17,8 @@ class Game {
         this.shieldActive = false;
         this.cameraRotation = 0;
         this.cameraPitch = 0;
+        this.headRotation = 0;
+        this.maxHeadRotation = Math.PI / 2;
         this.movement = {
             forward: false,
             backward: false,
@@ -506,17 +508,34 @@ class Game {
             
             // Update head rotation for all players
             if (playerData.id === this.playerData.id) {
-                // For local player, use camera rotation
-                player.headGroup.rotation.y = this.cameraRotation;
+                // For local player, use camera rotation and limited head turn
                 player.rotation.y = this.cameraRotation;
+                player.headGroup.rotation.y = this.headRotation;
+
+                // If head rotation is at max, start turning the body
+                if (Math.abs(this.headRotation) >= this.maxHeadRotation * 0.8) {
+                    const turnSpeed = 0.05;
+                    if (this.headRotation > 0) {
+                        // Turn body right, reset head
+                        player.rotation.y += turnSpeed;
+                        this.cameraRotation += turnSpeed;
+                        this.headRotation -= turnSpeed;
+                    } else {
+                        // Turn body left, reset head
+                        player.rotation.y -= turnSpeed;
+                        this.cameraRotation -= turnSpeed;
+                        this.headRotation += turnSpeed;
+                    }
+                }
             } else {
                 // For other players, calculate rotation based on movement
                 if (player.lastPosition) {
                     const dx = playerData.position.x - player.lastPosition.x;
                     const dz = playerData.position.z - player.lastPosition.z;
                     if (dx !== 0 || dz !== 0) {
-                        player.rotation.y = Math.atan2(dx, dz);
-                        player.headGroup.rotation.y = Math.atan2(dx, dz);
+                        const targetRotation = Math.atan2(dx, dz);
+                        player.rotation.y = targetRotation;
+                        player.headGroup.rotation.y = 0; // Reset head rotation for other players
                     }
                 }
             }
@@ -599,8 +618,14 @@ class Game {
         const movementX = e.movementX || 0;
         const movementY = e.movementY || 0;
         
+        // Back to original movement (negative for right turn)
         this.cameraRotation -= movementX * 0.002;
+        // Back to original vertical movement
         this.cameraPitch -= movementY * 0.002;
+        
+        // Calculate head rotation relative to body
+        this.headRotation = Math.max(-this.maxHeadRotation, 
+            Math.min(this.maxHeadRotation, this.headRotation - movementX * 0.002));
         
         // Limit vertical rotation to prevent camera flipping
         this.cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.cameraPitch));
