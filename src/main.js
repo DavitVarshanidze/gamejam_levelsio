@@ -1380,7 +1380,14 @@ class Game {
     }
 
     showCinematicView(tagger, tagged) {
-        console.log('Starting cinematic view');
+        console.log('Starting cinematic view with:', { tagger, tagged });
+        
+        // Ensure we have valid positions
+        if (!tagger.position || !tagged.position) {
+            console.error('Invalid positions for cinematic view');
+            return;
+        }
+
         this.isCinematicView = true;
         this.cinematicStartTime = Date.now();
         this.lastTaggedPlayer = tagged;
@@ -1389,6 +1396,7 @@ class Game {
         // Create cinematic camera with wider FOV for dramatic effect
         if (!this.cinematicCamera) {
             this.cinematicCamera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
+            this.scene.add(this.cinematicCamera);
         }
 
         // Remove any existing cinematic elements
@@ -1425,6 +1433,8 @@ class Game {
             tagged.position.z
         );
 
+        console.log('Camera positions:', { taggerPos, taggedPos });
+
         // Store initial positions for animation
         this.cinematicInitialPos = {
             tagger: taggerPos.clone(),
@@ -1452,6 +1462,11 @@ class Game {
             radius: distance * 0.5,
             angle: 0
         };
+
+        // Hide the hand model during cinematic
+        if (this.handModel) {
+            this.handModel.visible = false;
+        }
 
         // Disable controls during cinematic
         document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
@@ -1534,6 +1549,12 @@ class Game {
             this.isCinematicView = false;
             const bars = document.getElementById('cinematic-bars');
             if (bars) bars.remove();
+            
+            // Show hand model again
+            if (this.handModel) {
+                this.handModel.visible = true;
+            }
+            
             // Re-enable controls
             document.addEventListener('mousemove', this.handleMouseMove.bind(this));
             this.isGameOver = false;
@@ -1573,6 +1594,9 @@ class Game {
 
         // Add dramatic tilt
         this.cinematicCamera.rotation.z = Math.sin(progress * Math.PI * 2) * 0.1;
+
+        // Ensure we're using the cinematic camera for rendering
+        this.renderer.render(this.scene, this.cinematicCamera);
     }
 
     animate() {
@@ -1581,8 +1605,6 @@ class Game {
         // Update cinematic view if active
         if (this.isCinematicView && this.cinematicCamera) {
             this.updateCinematicView();
-            // Force render with cinematic camera
-            this.renderer.render(this.scene, this.cinematicCamera);
             return; // Skip normal rendering
         }
 
