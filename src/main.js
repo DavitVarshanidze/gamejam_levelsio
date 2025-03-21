@@ -25,7 +25,15 @@ class Game {
             right: false,
             jumping: false
         };
-        this.moveSpeed = 0.15;
+        this.moveSpeed = 0.2;
+        this.sprintSpeed = 0.4;
+        this.acceleration = 0.1;
+        this.deceleration = 0.15;
+        this.currentVelocity = new THREE.Vector3();
+        this.targetVelocity = new THREE.Vector3();
+        this.collisionBoxes = [];
+        this.playerRadius = 0.5; // Collision radius for player
+        this.playerHeight = 1.7; // Player height for collision
         this.jumpForce = 0.3;
         this.gravity = 0.015;
         this.verticalVelocity = 0;
@@ -47,6 +55,8 @@ class Game {
         // Setup renderer
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setClearColor(0x87CEEB); // Sky blue color
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.getElementById('game-container').appendChild(this.renderer.domElement);
 
         // Setup camera
@@ -58,12 +68,16 @@ class Game {
         this.scene.add(ambientLight);
 
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-        directionalLight.position.set(50, 50, 50);
+        directionalLight.position.set(100, 100, 50);
         directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
         this.scene.add(directionalLight);
 
         // Add ground (larger map)
-        const groundGeometry = new THREE.PlaneGeometry(400, 400);
+        const groundGeometry = new THREE.PlaneGeometry(800, 800);
         const groundMaterial = new THREE.MeshStandardMaterial({ 
             color: 0x90EE90,
             metalness: 0.1,
@@ -71,9 +85,13 @@ class Game {
         });
         const ground = new THREE.Mesh(groundGeometry, groundMaterial);
         ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
         this.scene.add(ground);
 
-        // Add obstacles and clouds
+        // Initialize collision boxes array
+        this.collisionBoxes = [];
+
+        // Add obstacles, buildings, and environment
         this.addObstacles();
         this.addClouds();
 
@@ -179,47 +197,228 @@ class Game {
     }
 
     addObstacles() {
-        // Add various obstacles around the map
-        const obstacleGeometry = new THREE.BoxGeometry(8, 16, 8);
-        const obstacleMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0xFFFFF0, // Ivory color
+        // Create building materials
+        const buildingMaterial = new THREE.MeshStandardMaterial({
+            color: 0xcccccc,
             metalness: 0.2,
-            roughness: 0.7
+            roughness: 0.8
         });
-        
-        // Create more obstacle positions in a grid pattern
-        const obstaclePositions = [];
-        const gridSize = 6; // 6x6 grid of obstacles
-        const spacing = 50; // Space between obstacles
+        const roofMaterial = new THREE.MeshStandardMaterial({
+            color: 0x8b4513,
+            metalness: 0.1,
+            roughness: 0.9
+        });
+        const windowMaterial = new THREE.MeshStandardMaterial({
+            color: 0x87ceeb,
+            metalness: 0.5,
+            roughness: 0.2,
+            transparent: true,
+            opacity: 0.7
+        });
 
-        for (let i = -gridSize/2; i < gridSize/2; i++) {
-            for (let j = -gridSize/2; j < gridSize/2; j++) {
-                // Add some randomness to positions
-                const offsetX = (Math.random() - 0.5) * 20;
-                const offsetZ = (Math.random() - 0.5) * 20;
-                obstaclePositions.push({
-                    x: i * spacing + offsetX,
-                    z: j * spacing + offsetZ
-                });
+        // Add houses and buildings
+        const buildingPositions = [
+            { x: -150, z: -150, type: 'house' },
+            { x: 150, z: 150, type: 'house' },
+            { x: -150, z: 150, type: 'building' },
+            { x: 150, z: -150, type: 'building' },
+            { x: 0, z: -100, type: 'house' },
+            { x: 0, z: 100, type: 'building' },
+            { x: -100, z: 0, type: 'house' },
+            { x: 100, z: 0, type: 'building' }
+        ];
+
+        buildingPositions.forEach(pos => {
+            if (pos.type === 'house') {
+                this.addHouse(pos.x, pos.z, buildingMaterial, roofMaterial, windowMaterial);
+            } else {
+                this.addBuilding(pos.x, pos.z, buildingMaterial, windowMaterial);
+            }
+        });
+
+        // Add trees and rocks for cover
+        const smallObstacles = [];
+        for (let i = 0; i < 50; i++) {
+            const x = (Math.random() - 0.5) * 380;
+            const z = (Math.random() - 0.5) * 380;
+            // Check distance from buildings
+            if (!buildingPositions.some(pos => 
+                Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2) < 20)) {
+                smallObstacles.push({ x, z });
             }
         }
 
-        // Add some random smaller obstacles
-        const smallObstacleGeometry = new THREE.BoxGeometry(4, 8, 4);
-        for (let i = 0; i < 20; i++) {
-            const x = (Math.random() - 0.5) * 350;
-            const z = (Math.random() - 0.5) * 350;
-            const obstacle = new THREE.Mesh(smallObstacleGeometry, obstacleMaterial);
-            obstacle.position.set(x, 4, z);
-            this.scene.add(obstacle);
+        smallObstacles.forEach(pos => {
+            if (Math.random() < 0.7) {
+                this.addTree(pos.x, pos.z);
+            } else {
+                this.addRock(pos.x, pos.z);
+            }
+        });
+    }
+
+    addHouse(x, z, buildingMaterial, roofMaterial, windowMaterial) {
+        const house = new THREE.Group();
+
+        // Main structure
+        const walls = new THREE.Mesh(
+            new THREE.BoxGeometry(20, 15, 20),
+            buildingMaterial
+        );
+        walls.position.y = 7.5;
+        house.add(walls);
+
+        // Roof (pyramid)
+        const roofGeometry = new THREE.ConeGeometry(15, 10, 4);
+        const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+        roof.position.y = 20;
+        roof.rotation.y = Math.PI / 4;
+        house.add(roof);
+
+        // Door
+        const door = new THREE.Mesh(
+            new THREE.BoxGeometry(4, 8, 0.5),
+            new THREE.MeshStandardMaterial({ color: 0x4a3520 })
+        );
+        door.position.set(0, 4, 10.1);
+        house.add(door);
+
+        // Windows
+        const windowGeometry = new THREE.BoxGeometry(4, 4, 0.5);
+        const windowPositions = [
+            { x: -5, z: 10.1 }, { x: 5, z: 10.1 }, // Front
+            { x: -5, z: -10.1 }, { x: 5, z: -10.1 }, // Back
+            { x: 10.1, z: -5 }, { x: 10.1, z: 5 }, // Right
+            { x: -10.1, z: -5 }, { x: -10.1, z: 5 } // Left
+        ];
+
+        windowPositions.forEach(pos => {
+            const window = new THREE.Mesh(windowGeometry, windowMaterial);
+            window.position.set(pos.x, 8, pos.z);
+            if (Math.abs(pos.x) > 10) {
+                window.rotation.y = Math.PI / 2;
+            }
+            house.add(window);
+        });
+
+        // Add collision box for the house
+        const collisionBox = new THREE.Box3(
+            new THREE.Vector3(x - 10, 0, z - 10),
+            new THREE.Vector3(x + 10, 15, z + 10)
+        );
+        this.collisionBoxes.push(collisionBox);
+
+        house.position.set(x, 0, z);
+        this.scene.add(house);
+    }
+
+    addBuilding(x, z, buildingMaterial, windowMaterial) {
+        const building = new THREE.Group();
+
+        // Main structure (taller than houses)
+        const structure = new THREE.Mesh(
+            new THREE.BoxGeometry(25, 30, 25),
+            buildingMaterial
+        );
+        structure.position.y = 15;
+        building.add(structure);
+
+        // Windows (grid pattern)
+        const windowGeometry = new THREE.BoxGeometry(3, 3, 0.5);
+        for (let floor = 0; floor < 5; floor++) {
+            for (let column = 0; column < 3; column++) {
+                // Front windows
+                const frontWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                frontWindow.position.set((column - 1) * 6, floor * 6 + 5, 12.6);
+                building.add(frontWindow);
+
+                // Back windows
+                const backWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                backWindow.position.set((column - 1) * 6, floor * 6 + 5, -12.6);
+                building.add(backWindow);
+
+                // Side windows
+                const rightWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                rightWindow.position.set(12.6, floor * 6 + 5, (column - 1) * 6);
+                rightWindow.rotation.y = Math.PI / 2;
+                building.add(rightWindow);
+
+                const leftWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                leftWindow.position.set(-12.6, floor * 6 + 5, (column - 1) * 6);
+                leftWindow.rotation.y = Math.PI / 2;
+                building.add(leftWindow);
+            }
         }
 
-        // Add main obstacles
-        obstaclePositions.forEach(pos => {
-            const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
-            obstacle.position.set(pos.x, 8, pos.z);
-            this.scene.add(obstacle);
+        // Add collision box for the building
+        const collisionBox = new THREE.Box3(
+            new THREE.Vector3(x - 12.5, 0, z - 12.5),
+            new THREE.Vector3(x + 12.5, 30, z + 12.5)
+        );
+        this.collisionBoxes.push(collisionBox);
+
+        building.position.set(x, 0, z);
+        this.scene.add(building);
+    }
+
+    addTree(x, z) {
+        const tree = new THREE.Group();
+
+        // Trunk
+        const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.5, 0.8, 8, 8),
+            new THREE.MeshStandardMaterial({ color: 0x4a3520 })
+        );
+        trunk.position.y = 4;
+        tree.add(trunk);
+
+        // Leaves (multiple layers for fuller look)
+        const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x2d5a27 });
+        for (let i = 0; i < 3; i++) {
+            const leaves = new THREE.Mesh(
+                new THREE.ConeGeometry(3 - i * 0.5, 6, 8),
+                leafMaterial
+            );
+            leaves.position.y = 8 + i * 2;
+            tree.add(leaves);
+        }
+
+        // Add collision cylinder
+        const collisionRadius = 2;
+        const collisionBox = new THREE.Box3(
+            new THREE.Vector3(x - collisionRadius, 0, z - collisionRadius),
+            new THREE.Vector3(x + collisionRadius, 12, z + collisionRadius)
+        );
+        this.collisionBoxes.push(collisionBox);
+
+        tree.position.set(x, 0, z);
+        this.scene.add(tree);
+    }
+
+    addRock(x, z) {
+        const rockGeometry = new THREE.DodecahedronGeometry(2 + Math.random() * 2);
+        const rockMaterial = new THREE.MeshStandardMaterial({
+            color: 0x808080,
+            roughness: 0.9,
+            metalness: 0.1
         });
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        
+        rock.position.set(x, 2, z);
+        rock.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+
+        // Add collision box
+        const collisionBox = new THREE.Box3(
+            new THREE.Vector3(x - 2, 0, z - 2),
+            new THREE.Vector3(x + 2, 4, z + 2)
+        );
+        this.collisionBoxes.push(collisionBox);
+
+        this.scene.add(rock);
     }
 
     startGame(username) {
@@ -447,16 +646,19 @@ class Game {
     }
 
     startSprint() {
+        if (this.sprintCooldown > 0 || this.sprintActive) return;
+
         this.sprintActive = true;
         const sprintStatus = document.getElementById('sprint-status');
         sprintStatus.textContent = 'Sprinting...';
-        sprintStatus.className = 'hud';
+        sprintStatus.className = 'hud sprint-active';
 
+        // Sprint duration
         setTimeout(() => {
             this.sprintActive = false;
             this.sprintCooldown = 6;
             
-            // Cooldown timer
+            // Start cooldown timer
             const cooldownInterval = setInterval(() => {
                 this.sprintCooldown--;
                 sprintStatus.textContent = `Sprint Cooldown: ${this.sprintCooldown}s`;
@@ -735,13 +937,14 @@ class Game {
     }
 
     updatePlayerPosition() {
-        if (!this.playerData) return;
+        if (!this.playerData || this.isGameOver) return;
 
-        const speed = this.sprintActive ? this.moveSpeed * 2 : this.moveSpeed;
-        let moveX = 0;
-        let moveZ = 0;
-
-        // Calculate movement relative to camera view
+        const speed = this.sprintActive ? this.sprintSpeed : this.moveSpeed;
+        
+        // Calculate target velocity based on input
+        this.targetVelocity.set(0, 0, 0);
+        
+        // Get movement direction relative to camera
         const forward = new THREE.Vector3(
             -Math.sin(this.cameraRotation),
             0,
@@ -753,35 +956,33 @@ class Game {
             Math.cos(this.cameraRotation + Math.PI/2)
         );
 
-        // Normalize movement vectors for consistent speed in all directions
+        // Normalize vectors
         forward.normalize();
         right.normalize();
 
-        if (this.movement.forward) {
-            moveX += forward.x * speed;
-            moveZ += forward.z * speed;
-        }
-        if (this.movement.backward) {
-            moveX -= forward.x * speed;
-            moveZ -= forward.z * speed;
-        }
-        if (this.movement.left) {
-            moveX -= right.x * speed;
-            moveZ -= right.z * speed;
-        }
-        if (this.movement.right) {
-            moveX += right.x * speed;
-            moveZ += right.z * speed;
+        // Apply movement inputs
+        if (this.movement.forward) this.targetVelocity.add(forward);
+        if (this.movement.backward) this.targetVelocity.sub(forward);
+        if (this.movement.left) this.targetVelocity.sub(right);
+        if (this.movement.right) this.targetVelocity.add(right);
+
+        // Normalize and apply speed if moving
+        if (this.targetVelocity.lengthSq() > 0) {
+            this.targetVelocity.normalize().multiplyScalar(speed);
         }
 
-        // Normalize diagonal movement to maintain consistent speed
-        if (moveX !== 0 && moveZ !== 0) {
-            const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
-            moveX = (moveX / length) * speed;
-            moveZ = (moveZ / length) * speed;
-        }
+        // Smoothly interpolate current velocity towards target velocity
+        const acceleration = this.targetVelocity.lengthSq() > 0 ? this.acceleration : this.deceleration;
+        this.currentVelocity.lerp(this.targetVelocity, acceleration);
 
-        // Apply jumping and gravity
+        // Store current position for collision detection
+        const currentPosition = new THREE.Vector3(
+            this.playerData.position.x,
+            this.playerData.position.y,
+            this.playerData.position.z
+        );
+
+        // Apply vertical movement (jumping/falling)
         this.verticalVelocity -= this.gravity;
         this.playerData.position.y += this.verticalVelocity;
 
@@ -792,24 +993,67 @@ class Game {
             this.movement.jumping = false;
         }
 
-        // Apply horizontal movement with smoothing
-        if (moveX !== 0 || moveZ !== 0) {
-            const smoothFactor = 0.8;
-            this.playerData.position.x += moveX * smoothFactor;
-            this.playerData.position.z += moveZ * smoothFactor;
+        // Apply horizontal movement
+        const newPosition = new THREE.Vector3(
+            currentPosition.x + this.currentVelocity.x,
+            this.playerData.position.y,
+            currentPosition.z + this.currentVelocity.z
+        );
 
-            // Keep player within bounds
-            this.playerData.position.x = Math.max(-200, Math.min(200, this.playerData.position.x));
-            this.playerData.position.z = Math.max(-200, Math.min(200, this.playerData.position.z));
+        // Check for collisions with buildings and obstacles
+        if (!this.checkCollisions(newPosition)) {
+            this.playerData.position.x = newPosition.x;
+            this.playerData.position.z = newPosition.z;
+        } else {
+            // Try sliding along walls
+            const slideX = new THREE.Vector3(
+                newPosition.x,
+                this.playerData.position.y,
+                currentPosition.z
+            );
+            const slideZ = new THREE.Vector3(
+                currentPosition.x,
+                this.playerData.position.y,
+                newPosition.z
+            );
+
+            if (!this.checkCollisions(slideX)) {
+                this.playerData.position.x = slideX.x;
+            }
+            if (!this.checkCollisions(slideZ)) {
+                this.playerData.position.z = slideZ.z;
+            }
         }
 
-        // Update camera position after moving
-        this.updateCameraPosition();
+        // Keep player within map bounds
+        const mapBounds = 390; // Slightly less than half the ground size
+        this.playerData.position.x = Math.max(-mapBounds, Math.min(mapBounds, this.playerData.position.x));
+        this.playerData.position.z = Math.max(-mapBounds, Math.min(mapBounds, this.playerData.position.z));
 
-        // Emit position update if there was any movement
-        if (moveX !== 0 || moveZ !== 0 || this.verticalVelocity !== 0) {
+        // Update camera and emit position if moved
+        if (!currentPosition.equals(this.playerData.position)) {
+            this.updateCameraPosition();
             this.socket.emit('move', this.playerData);
         }
+    }
+
+    checkCollisions(position) {
+        // Create player collision box
+        const playerBox = new THREE.Box3(
+            new THREE.Vector3(
+                position.x - this.playerRadius,
+                position.y,
+                position.z - this.playerRadius
+            ),
+            new THREE.Vector3(
+                position.x + this.playerRadius,
+                position.y + this.playerHeight,
+                position.z + this.playerRadius
+            )
+        );
+
+        // Check collision with all obstacle boxes
+        return this.collisionBoxes.some(box => playerBox.intersectsBox(box));
     }
 
     updateLeaderboard() {
