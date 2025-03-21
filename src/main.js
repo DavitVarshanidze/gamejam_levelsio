@@ -706,31 +706,18 @@ class Game {
                 this.sprintActive = false;
                 
                 // Get tagger and tagged player data
-                const taggerMesh = this.players.get(data.tagger.id);
-                const taggedMesh = this.players.get(data.tagged.id);
+                const tagger = {
+                    ...data.tagger,
+                    position: this.players.get(data.tagger.id)?.position || { x: 0, y: 1, z: 0 }
+                };
                 
-                if (taggerMesh && taggedMesh) {
-                    const tagger = {
-                        ...data.tagger,
-                        position: {
-                            x: taggerMesh.position.x,
-                            y: taggerMesh.position.y,
-                            z: taggerMesh.position.z
-                        }
-                    };
-                    
-                    const tagged = {
-                        ...data.tagged,
-                        position: {
-                            x: taggedMesh.position.x,
-                            y: taggedMesh.position.y,
-                            z: taggedMesh.position.z
-                        }
-                    };
-                    
-                    console.log('Starting cinematic with:', { tagger, tagged });
-                    this.showCinematicView(tagger, tagged);
-                }
+                const tagged = {
+                    ...data.tagged,
+                    position: this.players.get(data.tagged.id)?.position || { x: 0, y: 1, z: 0 }
+                };
+                
+                console.log('Starting cinematic with:', { tagger, tagged });
+                this.showCinematicView(tagger, tagged);
             }
         });
 
@@ -1399,8 +1386,16 @@ class Game {
         this.lastTaggerPlayer = tagger;
 
         // Create cinematic camera with wider FOV for dramatic effect
-        this.cinematicCamera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
-        
+        if (!this.cinematicCamera) {
+            this.cinematicCamera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1000);
+        }
+
+        // Remove any existing cinematic elements
+        const existingBars = document.getElementById('cinematic-bars');
+        if (existingBars) {
+            existingBars.remove();
+        }
+
         // Add black bars and player info with CoD style
         const blackBars = document.createElement('div');
         blackBars.id = 'cinematic-bars';
@@ -1457,72 +1452,77 @@ class Game {
             angle: 0
         };
 
-        // Disable all controls during cinematic
+        // Disable controls during cinematic
         document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
         this.isGameOver = true;
 
-        // Add CSS for CoD style kill feed
-        const style = document.createElement('style');
-        style.textContent = `
-            #cinematic-bars {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                justify-content: space-between;
-                pointer-events: none;
-                z-index: 9999;
-            }
-            .black-bar {
-                height: 20vh;
-                background: black;
-                animation: slideIn 0.5s ease-out;
-            }
-            .player-info {
-                position: absolute;
-                bottom: 25vh;
-                width: 100%;
-                text-align: center;
-                color: white;
-                font-size: 32px;
-                text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-                animation: fadeIn 0.5s ease-out;
-            }
-            .kill-feed {
-                background: rgba(0,0,0,0.7);
-                padding: 10px 20px;
-                border-radius: 5px;
-                display: inline-block;
-            }
-            .tagger-name {
-                color: #ff4444;
-                font-weight: bold;
-            }
-            .eliminated {
-                color: #ffffff;
-                margin: 0 10px;
-            }
-            .victim-name {
-                color: #44aaff;
-                font-weight: bold;
-            }
-            @keyframes slideIn {
-                from { height: 0; }
-                to { height: 20vh; }
-            }
-            @keyframes fadeIn {
-                from { opacity: 0; transform: translateY(20px); }
-                to { opacity: 1; transform: translateY(0); }
-            }
-        `;
-        document.head.appendChild(style);
+        // Add CSS for CoD style kill feed (if not already added)
+        if (!document.getElementById('cinematic-style')) {
+            const style = document.createElement('style');
+            style.id = 'cinematic-style';
+            style.textContent = `
+                #cinematic-bars {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    pointer-events: none;
+                    z-index: 9999;
+                }
+                .black-bar {
+                    height: 20vh;
+                    background: black;
+                    animation: slideIn 0.5s ease-out;
+                }
+                .player-info {
+                    position: absolute;
+                    bottom: 25vh;
+                    width: 100%;
+                    text-align: center;
+                    color: white;
+                    font-size: 32px;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+                    animation: fadeIn 0.5s ease-out;
+                }
+                .kill-feed {
+                    background: rgba(0,0,0,0.7);
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    display: inline-block;
+                }
+                .tagger-name {
+                    color: #ff4444;
+                    font-weight: bold;
+                }
+                .eliminated {
+                    color: #ffffff;
+                    margin: 0 10px;
+                }
+                .victim-name {
+                    color: #44aaff;
+                    font-weight: bold;
+                }
+                @keyframes slideIn {
+                    from { height: 0; }
+                    to { height: 20vh; }
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        console.log('Cinematic view setup complete');
     }
 
     updateCinematicView() {
-        if (!this.isCinematicView) return;
+        if (!this.isCinematicView || !this.cinematicCamera) return;
 
         const elapsed = Date.now() - this.cinematicStartTime;
         const duration = 3000; // 3 seconds
@@ -1533,6 +1533,9 @@ class Game {
             this.isCinematicView = false;
             const bars = document.getElementById('cinematic-bars');
             if (bars) bars.remove();
+            // Re-enable controls
+            document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+            this.isGameOver = false;
             return;
         }
 
@@ -1575,23 +1578,24 @@ class Game {
         requestAnimationFrame(() => this.animate());
 
         // Update cinematic view if active
-        if (this.isCinematicView) {
-            console.log('Rendering cinematic view');
+        if (this.isCinematicView && this.cinematicCamera) {
             this.updateCinematicView();
+            // Force render with cinematic camera
             this.renderer.render(this.scene, this.cinematicCamera);
-        } else {
-            // Normal game rendering
-            this.updateHandAnimation();
-            this.clouds.forEach(cloud => {
-                cloud.mesh.position.x += cloud.speed;
-                if (cloud.mesh.position.x > 100) {
-                    cloud.mesh.position.x = -100;
-                }
-            });
-            this.updateCameraPosition();
-            this.updatePlayerPosition();
-            this.renderer.render(this.scene, this.camera);
+            return; // Skip normal rendering
         }
+
+        // Normal game rendering
+        this.updateHandAnimation();
+        this.clouds.forEach(cloud => {
+            cloud.mesh.position.x += cloud.speed;
+            if (cloud.mesh.position.x > 100) {
+                cloud.mesh.position.x = -100;
+            }
+        });
+        this.updateCameraPosition();
+        this.updatePlayerPosition();
+        this.renderer.render(this.scene, this.camera);
     }
 
     getRandomSpawnPoint() {
