@@ -157,7 +157,7 @@ class Game {
 
         // Add mouse click handler for tagging
         document.addEventListener('mousedown', (e) => {
-            if (e.button === 0) { // Left click
+            if (e.button === 0 && this.playerData) { // Left click and player exists
                 this.animateHand();
             }
         });
@@ -1335,7 +1335,8 @@ class Game {
     }
 
     animateHand() {
-        if (!this.isHandAnimating) {
+        // Only animate if we have player data and not already animating
+        if (!this.isHandAnimating && this.playerData) {
             this.isHandAnimating = true;
             this.handAnimationTime = 0;
             
