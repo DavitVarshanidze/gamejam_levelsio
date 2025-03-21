@@ -1,15 +1,22 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const CopyPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = {
-    mode: 'production',
+    mode: 'development',
     entry: './src/main.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
         filename: '[name].[contenthash].js',
         clean: true
+    },
+    devServer: {
+        static: {
+            directory: path.join(__dirname, 'dist'),
+        },
+        compress: true,
+        port: 8080,
+        hot: true
     },
     optimization: {
         minimize: true,
@@ -63,14 +70,6 @@ module.exports = {
                 minifyCSS: true,
                 minifyURLs: true,
             },
-        }),
-        new CopyPlugin({
-            patterns: [
-                { 
-                    from: "public",
-                    to: "public"
-                }
-            ],
-        }),
+        })
     ],
 }; 
