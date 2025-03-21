@@ -8,7 +8,7 @@ class Game {
         this.playerData = null;
         this.socket = null;
         this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.controls = null;
         this.clouds = [];
@@ -219,15 +219,16 @@ class Game {
         // Connect to server
         this.socket = io('http://localhost:3000');
         
-        // Create player
+        // Create player with random spawn position
+        const spawnPoint = this.getRandomSpawnPoint();
         this.playerData = {
             id: null,
             username,
-            position: { x: (Math.random() - 0.5) * 360, y: 1, z: (Math.random() - 0.5) * 360 },
+            position: spawnPoint,
             rotation: 0,
             isTagger: false,
             isShielded: true,
-            color: '#00FFFF', // Cyan color for runners
+            color: '#00FFFF',
             score: 0,
             distanceRun: 0,
             lastPosition: null
@@ -770,7 +771,11 @@ class Game {
         
         // Create arm part
         const armGeometry = new THREE.BoxGeometry(0.2, 0.6, 0.2);
-        const armMaterial = new THREE.MeshStandardMaterial({ color: this.playerData.isTagger ? '#FF0000' : '#00FFFF' });
+        const armMaterial = new THREE.MeshStandardMaterial({ 
+            color: this.playerData.isTagger ? '#FF0000' : '#00FFFF',
+            metalness: 0.1,
+            roughness: 0.5
+        });
         const arm = new THREE.Mesh(armGeometry, armMaterial);
         arm.position.y = -0.3;
         hand.add(arm);
@@ -781,12 +786,19 @@ class Game {
         handMesh.position.y = 0;
         hand.add(handMesh);
 
-        // Position the hand in view
-        hand.position.set(0.4, -0.5, -0.5);
+        // Position the hand in view (adjusted position)
+        hand.position.set(0.4, -0.4, -0.6); // Moved hand closer to center and up
         hand.rotation.x = Math.PI / 8;
+        hand.rotation.y = -Math.PI / 12;
 
         this.handModel = hand;
+        this.scene.remove(this.handModel); // Remove if already exists
         this.camera.add(hand);
+
+        // Make sure camera is added to scene
+        if (!this.scene.getObjectById(this.camera.id)) {
+            this.scene.add(this.camera);
+        }
     }
 
     updateHandColor() {
@@ -813,24 +825,31 @@ class Game {
 
     updateHandAnimation() {
         if (this.isHandAnimating) {
-            this.handAnimationTime += 0.2;
+            // Slower animation speed
+            this.handAnimationTime += 0.1; // Reduced from 0.2
             
-            // Simple swing animation
             if (this.handModel) {
-                const swingAngle = Math.PI / 4;
+                const swingAngle = Math.PI / 3;
                 const progress = Math.min(1, this.handAnimationTime);
                 
-                // Swing forward and back
+                // Smoother swing animation
                 if (progress < 0.5) {
-                    this.handModel.rotation.x = Math.PI / 8 - swingAngle * (progress * 2);
+                    // Forward swing
+                    const swingProgress = Math.sin(progress * Math.PI) * swingAngle;
+                    this.handModel.rotation.x = Math.PI / 8 - swingProgress;
+                    this.handModel.position.z = -0.6 - progress * 0.1; // Reduced forward movement
                 } else {
-                    this.handModel.rotation.x = Math.PI / 8 - swingAngle * (2 - progress * 2);
+                    // Return swing
+                    const swingProgress = Math.sin((1 - progress) * Math.PI) * swingAngle;
+                    this.handModel.rotation.x = Math.PI / 8 - swingProgress;
+                    this.handModel.position.z = -0.6 - (1 - progress) * 0.1;
                 }
                 
                 // Reset animation
                 if (progress >= 1) {
                     this.isHandAnimating = false;
                     this.handModel.rotation.x = Math.PI / 8;
+                    this.handModel.position.z = -0.6;
                 }
             }
         }
@@ -859,6 +878,47 @@ class Game {
         this.updatePlayerPosition();
 
         this.renderer.render(this.scene, this.camera);
+    }
+
+    getRandomSpawnPoint() {
+        // Create several spawn zones to prevent players spawning too close
+        const spawnZones = [
+            { x: [-180, -120], z: [-180, -120] },
+            { x: [-180, -120], z: [120, 180] },
+            { x: [120, 180], z: [-180, -120] },
+            { x: [120, 180], z: [120, 180] },
+            { x: [-30, 30], z: [-180, -120] },
+            { x: [-30, 30], z: [120, 180] },
+            { x: [-180, -120], z: [-30, 30] },
+            { x: [120, 180], z: [-30, 30] }
+        ];
+
+        const zone = spawnZones[Math.floor(Math.random() * spawnZones.length)];
+        return {
+            x: zone.x[0] + Math.random() * (zone.x[1] - zone.x[0]),
+            y: 1,
+            z: zone.z[0] + Math.random() * (zone.z[1] - zone.z[0])
+        };
+    }
+
+    // Add this method to handle respawning
+    respawnPlayer() {
+        const spawnPoint = this.getRandomSpawnPoint();
+        this.playerData.position = spawnPoint;
+        this.playerData.isShielded = true;
+        this.shieldActive = true;
+        
+        // Reset shield timer
+        setTimeout(() => {
+            this.shieldActive = false;
+            this.playerData.isShielded = false;
+            this.socket.emit('shield-expired', this.playerData.id);
+            this.updateGameStatus();
+        }, 3000);
+
+        // Update position
+        this.socket.emit('move', this.playerData);
+        this.updateCameraPosition();
     }
 }
 
