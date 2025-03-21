@@ -17,8 +17,7 @@ class Game {
         this.shieldActive = false;
         this.cameraRotation = 0;
         this.cameraPitch = 0;
-        this.headRotation = 0;
-        this.maxHeadRotation = Math.PI / 2;
+        this.eyeHeight = 1.7; // Height of camera (player's eyes)
         this.movement = {
             forward: false,
             backward: false,
@@ -506,28 +505,8 @@ class Game {
                 playerData.position.z
             );
             
-            // Update head rotation for all players
-            if (playerData.id === this.playerData.id) {
-                // For local player, use camera rotation and limited head turn
-                player.rotation.y = this.cameraRotation;
-                player.headGroup.rotation.y = this.headRotation;
-
-                // If head rotation is at max, start turning the body
-                if (Math.abs(this.headRotation) >= this.maxHeadRotation * 0.8) {
-                    const turnSpeed = 0.05;
-                    if (this.headRotation > 0) {
-                        // Turn body right, reset head
-                        player.rotation.y += turnSpeed;
-                        this.cameraRotation += turnSpeed;
-                        this.headRotation -= turnSpeed;
-                    } else {
-                        // Turn body left, reset head
-                        player.rotation.y -= turnSpeed;
-                        this.cameraRotation -= turnSpeed;
-                        this.headRotation += turnSpeed;
-                    }
-                }
-            } else {
+            // Only rotate other players' models, not the local player (since we're in first person)
+            if (playerData.id !== this.playerData.id) {
                 // For other players, calculate rotation based on movement
                 if (player.lastPosition) {
                     const dx = playerData.position.x - player.lastPosition.x;
@@ -535,39 +514,40 @@ class Game {
                     if (dx !== 0 || dz !== 0) {
                         const targetRotation = Math.atan2(dx, dz);
                         player.rotation.y = targetRotation;
-                        player.headGroup.rotation.y = 0; // Reset head rotation for other players
+                        player.headGroup.rotation.y = 0;
                     }
                 }
-            }
-            player.lastPosition = { ...playerData.position };
-
-            // Update running animation
-            const isMoving = 
-                (playerData.position.x !== player.lastPosition.x) ||
-                (playerData.position.z !== player.lastPosition.z);
-
-            if (isMoving) {
-                player.animationTime += 0.15;
-                const swingAngle = Math.PI/4;
                 
-                // Animate arms and legs in opposite phases
-                player.leftArmGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
-                player.rightArmGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
-                player.leftLegGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
-                player.rightLegGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+                // Update running animation for other players
+                const isMoving = 
+                    (playerData.position.x !== player.lastPosition.x) ||
+                    (playerData.position.z !== player.lastPosition.z);
+
+                if (isMoving) {
+                    player.animationTime += 0.15;
+                    const swingAngle = Math.PI/4;
+                    
+                    player.leftArmGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+                    player.rightArmGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
+                    player.leftLegGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
+                    player.rightLegGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+                } else {
+                    player.leftArmGroup.rotation.x = 0;
+                    player.rightArmGroup.rotation.x = 0;
+                    player.leftLegGroup.rotation.x = 0;
+                    player.rightLegGroup.rotation.x = 0;
+                    player.animationTime = 0;
+                }
             } else {
-                // Reset animation when not moving
-                player.leftArmGroup.rotation.x = 0;
-                player.rightArmGroup.rotation.x = 0;
-                player.leftLegGroup.rotation.x = 0;
-                player.rightLegGroup.rotation.x = 0;
-                player.animationTime = 0;
+                // Hide the local player's model in first person
+                player.visible = false;
             }
+            
+            player.lastPosition = { ...playerData.position };
             
             // Update player appearance
             player.traverse((child) => {
                 if (child.isMesh && child.material.color) {
-                    // Don't change color of eyes
                     if (child.parent !== player.headGroup || child === player.headGroup.children[0]) {
                         child.material.color.setStyle(playerData.isTagger ? '#FF0000' : '#00FFFF');
                     }
@@ -581,26 +561,19 @@ class Game {
     updateCameraPosition() {
         if (!this.playerData) return;
 
-        const distance = 8;
-        const baseHeight = 5;
-        
-        // Calculate camera position using spherical coordinates
-        const horizontalDistance = distance * Math.cos(this.cameraPitch);
-        const verticalDistance = distance * Math.sin(this.cameraPitch);
-        
-        // Calculate camera position
-        const cameraX = this.playerData.position.x + Math.sin(this.cameraRotation) * horizontalDistance;
-        const cameraY = this.playerData.position.y + baseHeight + verticalDistance;
-        const cameraZ = this.playerData.position.z + Math.cos(this.cameraRotation) * horizontalDistance;
-        
-        this.camera.position.set(cameraX, cameraY, cameraZ);
-
-        // Look at player
-        this.camera.lookAt(
+        // Set camera position to player's eye level
+        this.camera.position.set(
             this.playerData.position.x,
-            this.playerData.position.y + 1, // Look at player's head level
+            this.playerData.position.y + this.eyeHeight,
             this.playerData.position.z
         );
+
+        // Calculate look direction
+        const lookX = this.playerData.position.x - Math.sin(this.cameraRotation) * Math.cos(this.cameraPitch);
+        const lookY = this.playerData.position.y + this.eyeHeight + Math.sin(this.cameraPitch);
+        const lookZ = this.playerData.position.z - Math.cos(this.cameraRotation) * Math.cos(this.cameraPitch);
+
+        this.camera.lookAt(lookX, lookY, lookZ);
 
         // Update player's last position for distance calculation
         if (!this.playerData.lastPosition) {
@@ -618,16 +591,11 @@ class Game {
         const movementX = e.movementX || 0;
         const movementY = e.movementY || 0;
         
-        // Back to original movement (negative for right turn)
+        // Update camera rotation
         this.cameraRotation -= movementX * 0.002;
-        // Back to original vertical movement
         this.cameraPitch -= movementY * 0.002;
         
-        // Calculate head rotation relative to body
-        this.headRotation = Math.max(-this.maxHeadRotation, 
-            Math.min(this.maxHeadRotation, this.headRotation - movementX * 0.002));
-        
-        // Limit vertical rotation to prevent camera flipping
+        // Limit vertical rotation to prevent flipping
         this.cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.cameraPitch));
         
         this.updateCameraPosition();
@@ -709,14 +677,13 @@ class Game {
         forward.normalize();
         right.normalize();
 
-        // Invert forward/backward movement
         if (this.movement.forward) {
-            moveX -= forward.x * speed;
-            moveZ -= forward.z * speed;
-        }
-        if (this.movement.backward) {
             moveX += forward.x * speed;
             moveZ += forward.z * speed;
+        }
+        if (this.movement.backward) {
+            moveX -= forward.x * speed;
+            moveZ -= forward.z * speed;
         }
         if (this.movement.left) {
             moveX -= right.x * speed;
@@ -747,7 +714,6 @@ class Game {
 
         // Apply horizontal movement with smoothing
         if (moveX !== 0 || moveZ !== 0) {
-            // Add slight smoothing to movement
             const smoothFactor = 0.8;
             this.playerData.position.x += moveX * smoothFactor;
             this.playerData.position.z += moveZ * smoothFactor;
@@ -756,6 +722,9 @@ class Game {
             this.playerData.position.x = Math.max(-200, Math.min(200, this.playerData.position.x));
             this.playerData.position.z = Math.max(-200, Math.min(200, this.playerData.position.z));
         }
+
+        // Update camera position after moving
+        this.updateCameraPosition();
 
         // Emit position update if there was any movement
         if (moveX !== 0 || moveZ !== 0 || this.verticalVelocity !== 0) {
