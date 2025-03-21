@@ -695,9 +695,9 @@ class Game {
 
         // Calculate movement relative to camera view
         const forward = new THREE.Vector3(
-            -Math.sin(this.cameraRotation),
+            Math.sin(this.cameraRotation),
             0,
-            -Math.cos(this.cameraRotation)
+            Math.cos(this.cameraRotation)
         );
         const right = new THREE.Vector3(
             Math.sin(this.cameraRotation + Math.PI/2),
