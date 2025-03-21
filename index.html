@@ -104,7 +104,7 @@
       .loser {
         color: #ff0000;
       }
-      #scoreboard {
+      #leaderboard {
         display: none;
         position: fixed;
         top: 50%;
@@ -116,13 +116,29 @@
         color: white;
         min-width: 300px;
         z-index: 1000;
+        border: 2px solid #444;
       }
-      .scoreboard-table {
+      .leaderboard-title {
+        text-align: center;
+        font-size: 24px;
+        margin-bottom: 15px;
+        color: #FFD700;
+        text-transform: uppercase;
+        border-bottom: 2px solid #444;
+        padding-bottom: 10px;
+      }
+      .leaderboard-table {
         width: 100%;
         border-collapse: collapse;
         margin-top: 10px;
       }
-      .scoreboard-table th, .scoreboard-table td {
+      .leaderboard-table th {
+        padding: 8px;
+        text-align: left;
+        border-bottom: 2px solid #444;
+        color: #FFD700;
+      }
+      .leaderboard-table td {
         padding: 8px;
         text-align: left;
         border-bottom: 1px solid rgba(255, 255, 255, 0.2);
@@ -132,6 +148,11 @@
       }
       .runner-row {
         color: #00FFFF;
+      }
+      .rank-column {
+        text-align: center;
+        font-weight: bold;
+        width: 40px;
       }
     </style>
   </head>
@@ -161,18 +182,19 @@
       Shift - Sprint (3s)<br>
       Mouse - Look around
     </div>
-    <div id="scoreboard">
-      <h2>Scoreboard</h2>
-      <table class="scoreboard-table">
+    <div id="leaderboard">
+      <h2 class="leaderboard-title">Leaderboard</h2>
+      <table class="leaderboard-table">
         <thead>
           <tr>
+            <th>#</th>
             <th>Player</th>
             <th>Role</th>
             <th>Score</th>
             <th>Distance</th>
           </tr>
         </thead>
-        <tbody id="scoreboard-body">
+        <tbody id="leaderboard-body">
         </tbody>
       </table>
     </div>
