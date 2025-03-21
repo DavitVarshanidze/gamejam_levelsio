@@ -16,13 +16,18 @@ class Game {
         this.sprintActive = false;
         this.shieldActive = false;
         this.cameraRotation = 0;
+        this.cameraPitch = 0;
         this.movement = {
             forward: false,
             backward: false,
             left: false,
-            right: false
+            right: false,
+            jumping: false
         };
         this.moveSpeed = 0.15;
+        this.jumpForce = 0.3;
+        this.gravity = 0.015;
+        this.verticalVelocity = 0;
         this.init();
     }
 
@@ -390,20 +395,78 @@ class Game {
         }, 3000);
     }
 
+    createPlayerModel(color) {
+        const player = new THREE.Group();
+
+        // Body
+        const bodyGeometry = new THREE.BoxGeometry(1, 1.5, 0.5);
+        const bodyMaterial = new THREE.MeshStandardMaterial({ color: color });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.y = 0.75;
+        player.add(body);
+
+        // Head
+        const headGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const headMaterial = new THREE.MeshStandardMaterial({ color: color });
+        const head = new THREE.Mesh(headGeometry, headMaterial);
+        head.position.y = 1.75;
+        player.add(head);
+
+        // Arms
+        const armGeometry = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+        const leftArm = new THREE.Mesh(armGeometry, bodyMaterial);
+        leftArm.position.set(-0.625, 1, 0);
+        player.add(leftArm);
+
+        const rightArm = new THREE.Mesh(armGeometry, bodyMaterial);
+        rightArm.position.set(0.625, 1, 0);
+        player.add(rightArm);
+
+        // Legs
+        const legGeometry = new THREE.BoxGeometry(0.25, 0.75, 0.25);
+        const leftLeg = new THREE.Mesh(legGeometry, bodyMaterial);
+        leftLeg.position.set(-0.25, 0.375, 0);
+        player.add(leftLeg);
+
+        const rightLeg = new THREE.Mesh(legGeometry, bodyMaterial);
+        rightLeg.position.set(0.25, 0.375, 0);
+        player.add(rightLeg);
+
+        // Face
+        const faceGroup = new THREE.Group();
+        
+        // Eyes
+        const eyeGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+        const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(-0.15, 1.8, 0.3);
+        player.add(leftEye);
+        
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(0.15, 1.8, 0.3);
+        player.add(rightEye);
+
+        return player;
+    }
+
     addPlayer(playerData) {
-        const geometry = new THREE.BoxGeometry(1, 2, 1);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: playerData.isTagger ? '#FF0000' : '#00FFFF', // Red for taggers, cyan for runners
-            transparent: playerData.isShielded,
-            opacity: playerData.isShielded ? 0.5 : 1
-        });
-        const player = new THREE.Mesh(geometry, material);
+        const player = this.createPlayerModel(playerData.isTagger ? '#FF0000' : '#00FFFF');
         
         player.position.set(
             playerData.position.x,
             playerData.position.y,
             playerData.position.z
         );
+
+        if (playerData.isShielded) {
+            player.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.transparent = true;
+                    child.material.opacity = 0.5;
+                }
+            });
+        }
 
         this.scene.add(player);
         this.players.set(playerData.id, player);
@@ -419,9 +482,16 @@ class Game {
             );
             
             // Update player appearance
-            player.material.color.setStyle(playerData.isTagger ? '#FF0000' : '#00FFFF');
-            player.material.transparent = playerData.isShielded;
-            player.material.opacity = playerData.isShielded ? 0.5 : 1;
+            player.traverse((child) => {
+                if (child.isMesh && child.material.color) {
+                    // Don't change color of eyes
+                    if (child.position.y !== 1.8) {
+                        child.material.color.setStyle(playerData.isTagger ? '#FF0000' : '#00FFFF');
+                    }
+                    child.material.transparent = playerData.isShielded;
+                    child.material.opacity = playerData.isShielded ? 0.5 : 1;
+                }
+            });
         }
     }
 
@@ -429,22 +499,23 @@ class Game {
         if (!this.playerData) return;
 
         const distance = 8;
-        const height = 5;
+        const baseHeight = 5;
         
-        // Calculate camera position based on rotation only
-        const cameraX = this.playerData.position.x + Math.sin(this.cameraRotation) * distance;
-        const cameraZ = this.playerData.position.z + Math.cos(this.cameraRotation) * distance;
+        // Calculate camera position using spherical coordinates
+        const horizontalDistance = distance * Math.cos(this.cameraPitch);
+        const verticalDistance = distance * Math.sin(this.cameraPitch);
         
-        this.camera.position.set(
-            cameraX,
-            this.playerData.position.y + height,
-            cameraZ
-        );
+        // Calculate camera position
+        const cameraX = this.playerData.position.x + Math.sin(this.cameraRotation) * horizontalDistance;
+        const cameraY = this.playerData.position.y + baseHeight + verticalDistance;
+        const cameraZ = this.playerData.position.z + Math.cos(this.cameraRotation) * horizontalDistance;
+        
+        this.camera.position.set(cameraX, cameraY, cameraZ);
 
         // Look at player
         this.camera.lookAt(
             this.playerData.position.x,
-            this.playerData.position.y,
+            this.playerData.position.y + 1, // Look at player's head level
             this.playerData.position.z
         );
 
@@ -462,7 +533,14 @@ class Game {
 
     handleMouseMove(e) {
         const movementX = e.movementX || 0;
+        const movementY = e.movementY || 0;
+        
         this.cameraRotation -= movementX * 0.002;
+        this.cameraPitch -= movementY * 0.002;
+        
+        // Limit vertical rotation to prevent camera flipping
+        this.cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.cameraPitch));
+        
         this.updateCameraPosition();
     }
 
@@ -488,6 +566,12 @@ class Game {
             case 'd':
             case 'arrowright':
                 this.movement.right = true;
+                break;
+            case ' ':
+                if (!this.movement.jumping && this.playerData.position.y <= 1) {
+                    this.movement.jumping = true;
+                    this.verticalVelocity = this.jumpForce;
+                }
                 break;
         }
     }
@@ -560,7 +644,18 @@ class Game {
             moveZ = (moveZ / length) * speed;
         }
 
-        // Apply movement if any
+        // Apply jumping and gravity
+        this.verticalVelocity -= this.gravity;
+        this.playerData.position.y += this.verticalVelocity;
+
+        // Ground collision
+        if (this.playerData.position.y <= 1) {
+            this.playerData.position.y = 1;
+            this.verticalVelocity = 0;
+            this.movement.jumping = false;
+        }
+
+        // Apply horizontal movement
         if (moveX !== 0 || moveZ !== 0) {
             this.playerData.position.x += moveX;
             this.playerData.position.z += moveZ;
@@ -568,7 +663,10 @@ class Game {
             // Keep player within bounds
             this.playerData.position.x = Math.max(-200, Math.min(200, this.playerData.position.x));
             this.playerData.position.z = Math.max(-200, Math.min(200, this.playerData.position.z));
+        }
 
+        // Emit position update if there was any movement
+        if (moveX !== 0 || moveZ !== 0 || this.verticalVelocity !== 0) {
             this.socket.emit('move', this.playerData);
         }
     }
