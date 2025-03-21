@@ -304,9 +304,31 @@ class Game {
                 this.updateHandColor();
             }
             
-            // Show cinematic view for last tag
+            // Show cinematic view for final tag
             if (data.isLastTag) {
-                this.showCinematicView(data.tagger, data.tagged);
+                // Disable movement immediately
+                this.movement = {
+                    forward: false,
+                    backward: false,
+                    left: false,
+                    right: false,
+                    jumping: false
+                };
+                this.sprintActive = false;
+                
+                // Get tagger and tagged player data
+                const tagger = this.players.get(data.tagger.id);
+                const tagged = this.players.get(data.tagged.id);
+                
+                if (tagger && tagged) {
+                    this.showCinematicView(data.tagger, data.tagged);
+                    
+                    // After cinematic, show game over
+                    setTimeout(() => {
+                        const gameOverModal = document.getElementById('game-over-modal');
+                        gameOverModal.style.display = 'block';
+                    }, this.cinematicDuration);
+                }
             }
         });
 
@@ -906,34 +928,50 @@ class Game {
         this.lastTaggedPlayer = tagged;
         this.lastTaggerPlayer = tagger;
 
-        // Create cinematic camera
-        this.cinematicCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Create cinematic camera with wider FOV for dramatic effect
+        this.cinematicCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         
-        // Add black bars
+        // Add black bars with dramatic fade
         const blackBars = document.createElement('div');
         blackBars.id = 'cinematic-bars';
         blackBars.innerHTML = `
             <div class="black-bar top"></div>
             <div class="player-info">
                 <span class="tagger-name">${tagger.username}</span>
-                <span class="tagged-name">tagged</span>
+                <span class="tagged-name">ELIMINATED</span>
                 <span class="victim-name">${tagged.username}</span>
             </div>
             <div class="black-bar bottom"></div>
         `;
         document.body.appendChild(blackBars);
 
-        // Position cinematic camera
-        const taggerPos = new THREE.Vector3(tagger.position.x, tagger.position.y + this.eyeHeight, tagger.position.z);
-        const taggedPos = new THREE.Vector3(tagged.position.x, tagged.position.y + this.eyeHeight, tagged.position.z);
+        // Position cinematic camera for dramatic angle
+        const taggerPos = new THREE.Vector3(
+            tagger.position.x,
+            tagger.position.y + this.eyeHeight,
+            tagger.position.z
+        );
+        const taggedPos = new THREE.Vector3(
+            tagged.position.x,
+            tagged.position.y + this.eyeHeight,
+            tagged.position.z
+        );
         
-        // Position camera behind tagger, looking at tagged player
+        // Calculate camera position for dramatic shot
         const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
-        const cameraPos = new THREE.Vector3().copy(taggerPos).sub(direction.multiplyScalar(5));
-        cameraPos.y += 2; // Slightly above for dramatic angle
+        const sideOffset = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(3); // Side offset for more dramatic angle
+        const cameraPos = new THREE.Vector3()
+            .copy(taggerPos)
+            .add(sideOffset)
+            .sub(direction.multiplyScalar(8));
+        cameraPos.y += 3; // Higher angle
         
         this.cinematicCamera.position.copy(cameraPos);
         this.cinematicCamera.lookAt(taggedPos);
+
+        // Disable all controls during cinematic
+        document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
+        this.isGameOver = true;
     }
 
     updateCinematicView() {
@@ -950,7 +988,7 @@ class Game {
             return;
         }
 
-        // Slow motion effect - update positions more slowly
+        // Slow motion effect
         const taggerPos = new THREE.Vector3(
             this.lastTaggerPlayer.position.x,
             this.lastTaggerPlayer.position.y + this.eyeHeight,
@@ -962,13 +1000,23 @@ class Game {
             this.lastTaggedPlayer.position.z
         );
 
-        // Smoothly move camera
+        // Create dramatic camera movement
         const direction = new THREE.Vector3().subVectors(taggedPos, taggerPos).normalize();
-        const cameraPos = new THREE.Vector3().copy(taggerPos).sub(direction.multiplyScalar(5));
-        cameraPos.y += 2 + Math.sin(progress * Math.PI) * 0.5; // Add slight vertical movement
-
+        const sideOffset = new THREE.Vector3(direction.z, 0, -direction.x).multiplyScalar(3 + Math.sin(progress * Math.PI) * 0.5);
+        const cameraPos = new THREE.Vector3()
+            .copy(taggerPos)
+            .add(sideOffset)
+            .sub(direction.multiplyScalar(8 - Math.sin(progress * Math.PI) * 2));
+        
+        // Add dramatic camera movement
+        cameraPos.y += 3 + Math.sin(progress * Math.PI * 2) * 0.5;
+        
         this.cinematicCamera.position.copy(cameraPos);
-        this.cinematicCamera.lookAt(taggedPos);
+        this.cinematicCamera.lookAt(
+            taggedPos.x,
+            taggedPos.y + Math.sin(progress * Math.PI) * 0.5,
+            taggedPos.z
+        );
     }
 
     animate() {
