@@ -317,20 +317,32 @@ class Game {
                 };
                 this.sprintActive = false;
                 
-                // Get tagger and tagged player data from the players Map
-                const tagger = {
-                    ...data.tagger,
-                    position: this.players.get(data.tagger.id).position
-                };
-                const tagged = {
-                    ...data.tagged,
-                    position: this.players.get(data.tagged.id).position
-                };
+                // Get tagger and tagged player data
+                const taggerMesh = this.players.get(data.tagger.id);
+                const taggedMesh = this.players.get(data.tagged.id);
                 
-                console.log('Tagger:', tagger);
-                console.log('Tagged:', tagged);
-                
-                this.showCinematicView(tagger, tagged);
+                if (taggerMesh && taggedMesh) {
+                    const tagger = {
+                        ...data.tagger,
+                        position: {
+                            x: taggerMesh.position.x,
+                            y: taggerMesh.position.y,
+                            z: taggerMesh.position.z
+                        }
+                    };
+                    
+                    const tagged = {
+                        ...data.tagged,
+                        position: {
+                            x: taggedMesh.position.x,
+                            y: taggedMesh.position.y,
+                            z: taggedMesh.position.z
+                        }
+                    };
+                    
+                    console.log('Starting cinematic with:', { tagger, tagged });
+                    this.showCinematicView(tagger, tagged);
+                }
             }
         });
 
@@ -560,65 +572,70 @@ class Game {
 
     updatePlayer(playerData) {
         const player = this.players.get(playerData.id);
-        if (player) {
-            // Update position
-            player.position.set(
-                playerData.position.x,
-                playerData.position.y,
-                playerData.position.z
-            );
-            
-            // Only rotate other players' models, not the local player (since we're in first person)
-            if (playerData.id !== this.playerData.id) {
-                // For other players, calculate rotation based on movement
-                if (player.lastPosition) {
-                    const dx = playerData.position.x - player.lastPosition.x;
-                    const dz = playerData.position.z - player.lastPosition.z;
-                    if (dx !== 0 || dz !== 0) {
-                        const targetRotation = Math.atan2(dx, dz);
-                        player.rotation.y = targetRotation;
-                        player.headGroup.rotation.y = 0;
-                    }
-                }
-                
-                // Update running animation for other players
-                const isMoving = 
-                    (playerData.position.x !== player.lastPosition.x) ||
-                    (playerData.position.z !== player.lastPosition.z);
+        if (!player) return;
 
-                if (isMoving) {
-                    player.animationTime += 0.15;
-                    const swingAngle = Math.PI/4;
-                    
-                    player.leftArmGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
-                    player.rightArmGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
-                    player.leftLegGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
-                    player.rightLegGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
-                } else {
-                    player.leftArmGroup.rotation.x = 0;
-                    player.rightArmGroup.rotation.x = 0;
-                    player.leftLegGroup.rotation.x = 0;
-                    player.rightLegGroup.rotation.x = 0;
-                    player.animationTime = 0;
+        // Initialize lastPosition if it doesn't exist
+        if (!player.lastPosition) {
+            player.lastPosition = { x: playerData.position.x, y: playerData.position.y, z: playerData.position.z };
+        }
+
+        // Update position
+        player.position.set(
+            playerData.position.x,
+            playerData.position.y,
+            playerData.position.z
+        );
+        
+        // Only rotate other players' models, not the local player
+        if (playerData.id !== this.playerData.id) {
+            // Calculate rotation based on movement
+            const dx = playerData.position.x - player.lastPosition.x;
+            const dz = playerData.position.z - player.lastPosition.z;
+            if (dx !== 0 || dz !== 0) {
+                const targetRotation = Math.atan2(dx, dz);
+                player.rotation.y = targetRotation;
+                if (player.headGroup) {
+                    player.headGroup.rotation.y = 0;
                 }
-            } else {
-                // Hide the local player's model in first person
-                player.visible = false;
             }
             
-            player.lastPosition = { ...playerData.position };
-            
-            // Update player appearance
-            player.traverse((child) => {
-                if (child.isMesh && child.material.color) {
-                    if (child.parent !== player.headGroup || child === player.headGroup.children[0]) {
-                        child.material.color.setStyle(playerData.isTagger ? '#FF0000' : '#00FFFF');
-                    }
-                    child.material.transparent = playerData.isShielded;
-                    child.material.opacity = playerData.isShielded ? 0.5 : 1;
-                }
-            });
+            // Update running animation
+            const isMoving = Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001;
+            if (isMoving && player.leftArmGroup) {
+                player.animationTime += 0.15;
+                const swingAngle = Math.PI/4;
+                
+                player.leftArmGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+                player.rightArmGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
+                player.leftLegGroup.rotation.x = -Math.sin(player.animationTime) * swingAngle;
+                player.rightLegGroup.rotation.x = Math.sin(player.animationTime) * swingAngle;
+            } else if (player.leftArmGroup) {
+                player.leftArmGroup.rotation.x = 0;
+                player.rightArmGroup.rotation.x = 0;
+                player.leftLegGroup.rotation.x = 0;
+                player.rightLegGroup.rotation.x = 0;
+                player.animationTime = 0;
+            }
+        } else {
+            // Hide the local player's model in first person
+            player.visible = false;
         }
+        
+        // Update last position
+        player.lastPosition.x = playerData.position.x;
+        player.lastPosition.y = playerData.position.y;
+        player.lastPosition.z = playerData.position.z;
+        
+        // Update player appearance
+        player.traverse((child) => {
+            if (child.isMesh && child.material.color) {
+                if (child.parent !== player.headGroup || child === player.headGroup.children[0]) {
+                    child.material.color.setStyle(playerData.isTagger ? '#FF0000' : '#00FFFF');
+                }
+                child.material.transparent = playerData.isShielded;
+                child.material.opacity = playerData.isShielded ? 0.5 : 1;
+            }
+        });
     }
 
     updateCameraPosition() {
